@@ -1,4 +1,5 @@
 """이어하기 API (FastAPI). 모든 조회는 현재 사용자(user_id) 조건을 건다."""
+import os
 import re
 import secrets
 from datetime import timedelta
@@ -106,6 +107,14 @@ class LoginIn(BaseModel):
     name: str = Field(max_length=30)
     pin: str
     create: bool = False
+
+
+@app.get("/api/health")
+def health(db: Session = Depends(get_db)):
+    # 배포 점검용: 어떤 DB에 붙었는지만 알려준다 (주소·비밀번호는 노출하지 않음)
+    db.execute(select(1))
+    source = "DATABASE_URL" if os.environ.get("DATABASE_URL") else "POSTGRES_URL" if os.environ.get("POSTGRES_URL") else None
+    return {"ok": True, "db": db.get_bind().dialect.name, "db_env": source, "region": os.environ.get("VERCEL_REGION")}
 
 
 @app.get("/api/me")
