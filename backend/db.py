@@ -10,6 +10,7 @@ from sqlalchemy import (
     String,
     Text,
     create_engine,
+    text,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker
 from sqlalchemy.pool import NullPool
@@ -108,4 +109,10 @@ def init_db() -> None:
     global _initialized
     if not _initialized:
         Base.metadata.create_all(engine)
+        if engine.dialect.name == "postgresql":
+            # Supabase는 public 스키마를 REST API(anon 키)로 노출하므로 RLS를 켜서 막는다.
+            # 앱은 테이블 소유자로 접속하므로 RLS의 영향을 받지 않는다.
+            with engine.begin() as conn:
+                for table in Base.metadata.sorted_tables:
+                    conn.execute(text(f'ALTER TABLE "{table.name}" ENABLE ROW LEVEL SECURITY'))
         _initialized = True
