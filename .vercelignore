@@ -1,0 +1,5 @@
+.venv
+tests
+*.db
+.env
+.env.local
