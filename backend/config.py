@@ -31,7 +31,8 @@ IS_VERCEL = bool(os.environ.get("VERCEL"))
 
 
 def _database_url() -> str:
-    url = os.environ.get("DATABASE_URL", "").strip()
+    # POSTGRES_URL: Vercel Marketplace의 Supabase 연동이 자동으로 넣어주는 pooler 주소
+    url = (os.environ.get("DATABASE_URL") or os.environ.get("POSTGRES_URL") or "").strip()
     if not url:
         if IS_VERCEL:
             log.warning("DATABASE_URL 미설정: /tmp SQLite 사용 (재배포·콜드스타트 시 데이터 유실)")
@@ -42,6 +43,12 @@ def _database_url() -> str:
         url = "postgresql://" + url[len("postgres://"):]
     if url.startswith("postgresql://"):
         url = "postgresql+psycopg2://" + url[len("postgresql://"):]
+    if url.startswith("postgresql") and "?" in url:
+        # libpq가 모르는 파라미터(예: supa=base-pooler.x)는 연결 오류를 내므로 제거
+        base, query = url.split("?", 1)
+        allowed = {"sslmode", "sslrootcert", "connect_timeout", "application_name", "options"}
+        kept = [kv for kv in query.split("&") if kv.split("=", 1)[0] in allowed]
+        url = base + ("?" + "&".join(kept) if kept else "")
     return url
 
 
