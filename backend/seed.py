@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from . import vcs
 from .briefing import build_source, source_hash
 from .config import KST
-from .db import Briefing, BriefingCall, Project, Record, Task, User, utcnow
+from .db import Briefing, BriefingCall, Project, Record, Suggestion, Task, User, utcnow
 from .services import content_hash, record_dict, recent_records, task_label
 
 GIT_STATUS_7 = """On branch fix/refund-7
@@ -31,6 +31,22 @@ BRIEFING_7 = (
     "② 멈춘 지점: RefundService.py calc_refund()의 부분 환불 분기 작성 완료 (fix/refund-7)\n"
     "③ 다음 할 일: 쿠폰 미적용 건 예외 처리 추가 → test_refund.py 단위 테스트 작성"
 )
+
+# 체험 모드의 멈춤 기록 추천 (미리 만든 AI 결과 — 체험 방문자 입력으로는 API를 호출하지 않는다)
+DEMO_SUGGEST = {
+    "유지보수 #7": {
+        "where": "calc_refund() 부분 환불 분기 완료, 쿠폰 미적용 건 예외 처리 전",
+        "next": ["쿠폰 미적용 주문 예외 처리 추가", "test_refund.py 부분 환불 테스트 작성", "금요일 배포 전 MR #42 리뷰 요청"],
+    },
+    "요청 #112": {
+        "where": "LeaveCalcBatch.java calcMonthlyLeave() 월 단위 발생 로직 수정 완료",
+        "next": ["LeaveCalcBatchTest 1년 미만자 케이스 작성", "개발서버에서 배치 수동 실행해 결과 확인", "svn 커밋 전 변경 파일 3개 검토"],
+    },
+    "유지보수 #21": {
+        "where": "FileDownloadController Content-Disposition 헤더 인코딩 확인 중",
+        "next": ["filename*=UTF-8 형식으로 헤더 수정", "한글 파일명 첨부로 브라우저별 다운로드 확인", "IE 모드 사용 부서 호환 여부 확인"],
+    },
+}
 
 DONE_TASKS = [
     ("유지보수 #1", "결제 완료 메일 발송 누락", "메일 큐 재시도 로직 추가 · 배포 완료"),
@@ -70,6 +86,7 @@ def clear_user_data(db: Session, user_id: int) -> None:
     project_ids = select(Project.id).where(Project.user_id == user_id)
     task_ids = select(Task.id).where(Task.project_id.in_(project_ids))
     db.execute(delete(Briefing).where(Briefing.task_id.in_(task_ids)))
+    db.execute(delete(Suggestion).where(Suggestion.task_id.in_(task_ids)))
     db.execute(delete(BriefingCall).where(BriefingCall.user_id == user_id))
     db.execute(delete(Record).where(Record.task_id.in_(task_ids)))
     db.execute(delete(Task).where(Task.project_id.in_(project_ids)))

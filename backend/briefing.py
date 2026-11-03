@@ -1,4 +1,5 @@
-"""복귀 브리핑 (Gemini API). 버튼을 눌렀을 때만 호출하고, 입력이 같으면 캐시를 쓴다."""
+"""Gemini API 호출 (복귀 브리핑 · 멈춤 기록 추천). 입력이 같으면 캐시를 쓴다.
+AI를 부르는 곳은 이 파일 하나뿐이라, 부대 내부 모델 등으로 바꿀 때 여기만 고치면 된다."""
 import hashlib
 import json
 import time
@@ -48,10 +49,12 @@ class BriefingError(Exception):
     pass
 
 
-def _request(model: str, prompt: str, thinking: bool, timeout: float) -> dict:
+def _request(model: str, prompt: str, thinking: bool, timeout: float, json_mode: bool = False) -> dict:
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
     # thinking 모델은 생각 토큰도 출력 한도에 포함되므로 한도를 넉넉히 두고 생각 수준을 낮춘다
     gen = {"temperature": 0.2, "maxOutputTokens": 4096}
+    if json_mode:
+        gen["responseMimeType"] = "application/json"
     if thinking:
         gen["thinkingConfig"] = {"thinkingLevel": "low"}
     req = urllib.request.Request(
@@ -68,11 +71,11 @@ def _request(model: str, prompt: str, thinking: bool, timeout: float) -> dict:
 _RETRY_NEXT_MODEL = {404, 429, 500, 503, 504}
 
 
-def call_gemini(source: str) -> tuple[str, str]:
-    """(요약, 실제 사용한 모델)을 돌려준다."""
+def generate(prompt: str, accept, json_mode: bool = False):
+    """모델을 차례로 시도해 (accept(text, finish_reason)의 결과, 실제 사용한 모델)을 돌려준다.
+    accept가 None을 돌려주면(잘린 응답 등) 다음 모델로 넘어간다."""
     if not GEMINI_API_KEY:
         raise BriefingError("no_key")
-    prompt = PROMPT.format(source=source)
     models = list(dict.fromkeys([GEMINI_MODEL, *GEMINI_FALLBACK_MODELS]))
     deadline = time.monotonic() + 30  # 서버리스 함수 시간 제한보다 짧게
     last = "network"
@@ -82,12 +85,13 @@ def call_gemini(source: str) -> tuple[str, str]:
             break
         try:
             try:
-                data = _request(model, prompt, thinking=True, timeout=min(15, remaining))
+                data = _request(model, prompt, thinking=True, timeout=min(15, remaining), json_mode=json_mode)
             except urllib.error.HTTPError as e:
                 if e.code != 400:
                     raise
                 # thinkingLevel을 모르는 모델이면 생각 설정 없이 다시 요청
-                data = _request(model, prompt, thinking=False, timeout=max(1, min(15, deadline - time.monotonic())))
+                data = _request(model, prompt, thinking=False,
+                                timeout=max(1, min(15, deadline - time.monotonic())), json_mode=json_mode)
         except urllib.error.HTTPError as e:
             last = f"http_{e.code}"
             if e.code in _RETRY_NEXT_MODEL:
@@ -101,11 +105,21 @@ def call_gemini(source: str) -> tuple[str, str]:
             text = "".join(p.get("text", "") for p in cand["content"]["parts"]).strip()
         except (KeyError, IndexError, TypeError) as e:
             raise BriefingError("bad_response") from e
-        kept = [l.strip() for l in text.splitlines() if l.strip().startswith(("①", "②", "③"))]
-        if len(kept) >= 3:
-            return "\n".join(kept[:3]), model
-        if cand.get("finishReason") == "MAX_TOKENS" or not text:
+        result = accept(text, cand.get("finishReason"))
+        if result is None:
             last = "truncated"
             continue
-        return text, model
+        return result, model
     raise BriefingError(last)
+
+
+def call_gemini(source: str) -> tuple[str, str]:
+    """복귀 브리핑: (요약, 실제 사용한 모델)을 돌려준다."""
+    def accept(text: str, finish: str | None):
+        kept = [l.strip() for l in text.splitlines() if l.strip().startswith(("①", "②", "③"))]
+        if len(kept) >= 3:
+            return "\n".join(kept[:3])
+        if finish == "MAX_TOKENS" or not text:
+            return None
+        return text
+    return generate(PROMPT.format(source=source), accept)

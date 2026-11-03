@@ -179,6 +179,56 @@ def test_demo():
     assert c.get("/api/home").json()["card"]["task"]["label"] == "유지보수 #7 — 환불 로직 수정"
 
 
+
+def test_suggest():
+    from backend import config, suggest
+    c = TestClient(app)
+    c.post("/api/login", json={"name": "suggester", "pin": "3434", "create": True})
+    p = c.post("/api/projects", json={"name": "p"}).json()
+    t = c.post(f"/api/projects/{p['id']}/tasks", json={"title": "t"}).json()
+    url = f"/api/tasks/{t['id']}/suggest"
+    c.post(f"/api/tasks/{t['id']}/records", json={"type": "manual", "next": "calc() 예외 처리"})
+
+    # AI 키 없음 → 규칙 기반: 지난번 다음엔 + 수정 파일 기준 후보, 어디까지 제안
+    r = c.post(url, json={"vcs_raw": "## fix/x\n M src/Refund.py\n M src/Util.py"}).json()
+    assert r["source"] == "rule" and r["next"][0] == "calc() 예외 처리"
+    assert any("Refund.py" in n and "테스트" in n for n in r["next"]) and len(r["next"]) <= 3
+    assert r["where"].startswith("Refund.py, Util.py") and "fix/x" in r["where"]
+    assert c.post(url, json={}).json()["next"] == ["calc() 예외 처리"]
+
+    # AI 사용: 같은 입력이면 캐시, 실패하면 규칙 기반으로 대체(오류 아님), 한도 초과도 대체
+    old_key, old_call, old_limit = config.GEMINI_API_KEY, suggest.call_ai, config.BRIEFING_PER_USER_PER_DAY
+    config.GEMINI_API_KEY, config.BRIEFING_PER_USER_PER_DAY = "fake", 2
+    calls = []
+    suggest.call_ai = lambda src: (calls.append(src), ({"where": "w", "next": ["a", "b"]}, "fake-model"))[1]
+    try:
+        r = c.post(url, json={"what": "x"}).json()
+        assert r["source"] == "ai" and r["next"] == ["a", "b"] and not r["cached"]
+        assert "지금 입력 중" in calls[0] and "calc() 예외 처리" in calls[0]
+        assert c.post(url, json={"what": "x"}).json()["cached"] is True and len(calls) == 1
+
+        def boom(src):
+            raise suggest.briefing.BriefingError("network")
+        suggest.call_ai = boom
+        r = c.post(url, json={"what": "y"})
+        assert r.status_code == 200 and r.json()["source"] == "rule" and r.json()["note"]
+        r = c.post(url, json={"what": "z"}).json()  # 하루 2회 모두 사용함
+        assert r["source"] == "rule" and "한도" in r["note"]
+    finally:
+        config.GEMINI_API_KEY, suggest.call_ai, config.BRIEFING_PER_USER_PER_DAY = old_key, old_call, old_limit
+
+    # AI 응답 파싱: 코드 블록·문자열 next 허용, 깨진 JSON은 다음 모델로(None)
+    assert suggest._parse('```json\n{"where": "w", "next": "한 줄"}\n```', "STOP") == {"where": "w", "next": ["한 줄"]}
+    assert suggest._parse('{"where": "w", "nex', "MAX_TOKENS") is None
+
+    # 체험 모드: 미리 만든 추천, API 호출 없음
+    d = TestClient(app)
+    d.post("/api/demo")
+    card = d.get("/api/home").json()["card"]
+    r = d.post(f"/api/tasks/{card['task']['id']}/suggest", json={}).json()
+    assert r["source"] == "demo" and len(r["next"]) == 3
+
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_"):

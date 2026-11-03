@@ -89,7 +89,7 @@ DEMO_HOURS = 24
 DEMO_PER_IP_PER_HOUR = 20
 DEMO_TOTAL_PER_HOUR = 300
 SIGNUP_PER_IP_PER_HOUR = 10
-BRIEFING_PER_USER_PER_DAY = 30
+BRIEFING_PER_USER_PER_DAY = 60  # 복귀 브리핑 + 멈춤 기록 추천 합계
 
 # 한국은 서머타임이 없으므로 고정 오프셋 사용 (서버리스 환경의 tzdata 의존 제거)
 KST = timezone(timedelta(hours=9))

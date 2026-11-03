@@ -104,8 +104,19 @@ class Briefing(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 
+class Suggestion(Base):
+    """멈춤 기록 AI 추천 캐시 (작업당 1건, 입력이 같으면 다시 호출하지 않음)."""
+    __tablename__ = "suggestions"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    task_id: Mapped[int] = mapped_column(ForeignKey("tasks.id", ondelete="CASCADE"), unique=True)
+    payload: Mapped[dict] = mapped_column(JSON)
+    source_hash: Mapped[str] = mapped_column(String(64))
+    model: Mapped[str] = mapped_column(String(80))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
 class BriefingCall(Base):
-    """복귀 브리핑 API 호출 기록 (사용자별 하루 한도 계산용)."""
+    """AI(복귀 브리핑·멈춤 기록 추천) 호출 기록 (사용자별 하루 한도 계산용)."""
     __tablename__ = "briefing_calls"
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)

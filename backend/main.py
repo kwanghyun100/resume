@@ -13,8 +13,9 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from . import briefing as briefing_mod
+from . import suggest as suggest_mod
 from . import config, seed, vcs
-from .db import Briefing, BriefingCall, Project, Record, SessionLocal, Task, User, init_db, utcnow
+from .db import Briefing, BriefingCall, Project, Record, SessionLocal, Suggestion, Task, User, init_db, utcnow
 from .security import hash_ip, hash_pin, make_session_token, read_session_token, verify_pin
 from .services import (
     build_card, content_hash, iso, recent_records, record_dict, standup, task_dict, task_label, week_stats,
@@ -514,7 +515,7 @@ def task_briefing(task_id: int, user: User = Depends(current_user), db: Session 
     used = db.scalar(select(func.count(BriefingCall.id)).where(
         BriefingCall.user_id == user.id, BriefingCall.created_at > utcnow() - timedelta(days=1)))
     if used >= config.BRIEFING_PER_USER_PER_DAY:
-        raise HTTPException(429, f"요약은 하루 {config.BRIEFING_PER_USER_PER_DAY}회까지 쓸 수 있습니다")
+        raise HTTPException(429, f"AI 기능은 하루 {config.BRIEFING_PER_USER_PER_DAY}회까지 쓸 수 있습니다")
     db.add(BriefingCall(user_id=user.id))
     db.commit()  # 외부 API를 기다리는 동안 DB 트랜잭션(락)을 잡고 있지 않도록 먼저 끝낸다
 
@@ -536,6 +537,68 @@ def task_briefing(task_id: int, user: User = Depends(current_user), db: Session 
         except IntegrityError:  # 같은 작업의 요약이 동시에 저장됨 → 다시 읽어서 갱신
             db.rollback()
     return out(b, False)
+
+
+# ---------------------------------------------------------------- 멈춤 기록 추천
+
+class SuggestIn(BaseModel):
+    what: str = Field(default="", max_length=2000)
+    where: str = Field(default="", max_length=2000)
+    memo: str = Field(default="", max_length=20000)
+    vcs_raw: str = Field(default="", max_length=20000)
+
+
+def _ai_calls_today(db: Session, user: User) -> int:
+    return db.scalar(select(func.count(BriefingCall.id)).where(
+        BriefingCall.user_id == user.id, BriefingCall.created_at > utcnow() - timedelta(days=1)))
+
+
+@app.post("/api/tasks/{task_id}/suggest")
+def task_suggest(task_id: int, body: SuggestIn, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    """지금 입력 중인 내용 + 최근 기록으로 '어디까지'·'다음엔' 후보를 만든다.
+    보조 기능이므로 AI가 꺼져 있거나 실패·한도 초과여도 오류 대신 규칙 기반 추천을 돌려준다."""
+    t, p = _own_task(db, user, task_id)
+    recs = [record_dict(r) for r in recent_records(db, t.id, suggest_mod.MAX_RECORDS)]
+    parsed = vcs.parse(body.vcs_raw) if body.vcs_raw.strip() else {"branch": None, "files": []}
+    current = {"what": body.what.strip(), "where": body.where.strip(), "memo": body.memo.strip(),
+               "branch": parsed["branch"], "files": parsed["files"]}
+
+    def rule(note: str = "") -> dict:
+        return {**suggest_mod.rule_based(current, recs), "source": "rule", "note": note}
+
+    if user.is_demo:
+        demo = seed.DEMO_SUGGEST.get(t.ticket_no or "")
+        return {**demo, "source": "demo", "note": ""} if demo else rule()
+    if not config.GEMINI_API_KEY:
+        return rule()
+
+    src = suggest_mod.build_source(p.name, task_label(t), current, recs)
+    h = briefing_mod.source_hash(src)
+    cached = db.scalar(select(Suggestion).where(Suggestion.task_id == t.id))
+    if cached and cached.source_hash == h:
+        return {**cached.payload, "source": "ai", "model": cached.model, "cached": True, "note": ""}
+    if _ai_calls_today(db, user) >= config.BRIEFING_PER_USER_PER_DAY:
+        return rule("오늘 AI 사용 한도를 넘어 기본 추천을 보여줍니다")
+    db.add(BriefingCall(user_id=user.id))
+    db.commit()  # 외부 API를 기다리는 동안 트랜잭션을 잡고 있지 않도록 먼저 끝낸다
+
+    try:
+        payload, used_model = suggest_mod.call_ai(src)
+    except briefing_mod.BriefingError:
+        return rule("AI 응답이 없어 기본 추천을 보여줍니다")
+
+    for _ in range(2):
+        s = db.scalar(select(Suggestion).where(Suggestion.task_id == t.id))
+        if s:
+            s.payload, s.source_hash, s.model, s.created_at = payload, h, used_model, utcnow()
+        else:
+            db.add(Suggestion(task_id=t.id, payload=payload, source_hash=h, model=used_model))
+        try:
+            db.commit()
+            break
+        except IntegrityError:  # 같은 작업의 추천이 동시에 저장됨 → 다시 읽어서 갱신
+            db.rollback()
+    return {**payload, "source": "ai", "model": used_model, "cached": False, "note": ""}
 
 
 # ---------------------------------------------------------------- 정적 파일 (로컬 개발용; Vercel은 public/을 CDN으로 서빙)

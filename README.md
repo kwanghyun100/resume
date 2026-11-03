@@ -19,7 +19,7 @@
 | 목표 | 구현 |
 |---|---|
 | 출근 후 **1분 안에** 작업 시작 | 첫 화면은 목록이 아니라 **이어하기 카드 한 장**. 복귀 시간을 실제로 재서 보여줌 |
-| 급히 떠날 때 **10초 안에** 기록 | `S` → "다음엔" 한 줄 → `Enter`. 시간이 없으면 [그냥 저장] |
+| 급히 떠날 때 **10초 안에** 기록 | `S` → AI 추천 후보 클릭(또는 한 줄 입력) → `Enter`. 시간이 없으면 [그냥 저장] |
 | 버튼을 깜빡해도 맥락 보존 | 5분마다 + 탭 전환·창 닫기 때 **자동 저장** (변경 있을 때만) |
 
 ## 핵심 기능
@@ -28,6 +28,7 @@
 |---|---|---|
 | F1 | **이어하기 카드** | 무엇을 · 어디까지 · **다음엔** + 수정 중 파일·브랜치·메모. 자동 초안이 더 새로우면 수동 기록의 "다음엔"과 합쳐서 표시 |
 | F2 | **10초 멈춤 기록** | 열리자마자 "다음엔"에 커서, `Enter`로 저장. 무엇을/어디까지는 직전 값으로 미리 채움 |
+| ✦ | **AI 멈춤 기록 추천** | 직전 기록·붙여넣은 git/svn 상태를 보고 "다음엔" 후보 3개와 "어디까지" 한 줄을 제안 → 클릭 또는 `Alt+1~3`으로 채움. AI가 꺼져 있거나 실패·한도 초과면 규칙 기반 추천으로 자동 대체 (화면·코드 내용은 보내지 않음) |
 | F3 | **작업 히스토리** | 프로젝트 → 작업 → 기록 타임라인. 수동 기록은 크게, 자동 기록은 한 줄로 접힘 |
 | ✦ | **git/svn status 해석** | `git status`(영어·한국어 로케일), `--short`, `svn status`를 붙여넣으면 자동 감지 → 파일·브랜치 추출 |
 | ✦ | **AI 프롬프트 · CONTEXT.md** | opencode·Claude 등에 바로 붙여넣는 프롬프트, 프로젝트 폴더에 두는 `.resume/CONTEXT.md` 내려받기 |
@@ -57,21 +58,23 @@ Vercel Python 서버리스 (FastAPI, 서울 리전 icn1)
   ├─ backend/main.py      라우트 · 인증 · 사용자별 데이터 격리
   ├─ backend/services.py  카드 병합 규칙 · 주간 통계 · 스탠드업
   ├─ backend/vcs.py       git/svn status 파서
-  ├─ backend/briefing.py  Gemini 호출 (모델 폴백 · 캐시)
+  ├─ backend/briefing.py  Gemini 호출 (모델 폴백 · 캐시) — AI를 부르는 유일한 곳
+  ├─ backend/suggest.py   멈춤 기록 추천 (AI / 규칙 기반)
   └─ backend/seed.py      체험 모드 샘플
   │  SQLAlchemy (NullPool)
   ▼
 Supabase PostgreSQL (서울)          ← 로컬 개발은 SQLite, 같은 코드
 ```
 
-데이터 모델: `User 1─N Project 1─N Task 1─N Record`, `Task 1─1 Briefing`
+데이터 모델: `User 1─N Project 1─N Task 1─N Record`, `Task 1─1 Briefing`, `Task 1─1 Suggestion`
 
 ## 보안·안정성
 
 - 이름 + 4자리 PIN(PBKDF2 해시). **5회 실패 시 5분 잠금** — 시도 횟수를 PIN 검사 전에 원자적으로 올려 동시 요청으로도 우회 불가
 - HttpOnly · Secure · SameSite=Lax 서명 쿠키 30일. 모든 조회에 `user_id` 조건
 - Supabase 테이블 RLS 활성화(REST API 노출 차단). 앱은 서버에서만 DB 접속
-- Gemini 키는 서버 환경 변수로만 관리, 사용자별 하루 30회 제한, 무료 등급 데이터 정책 안내 후 전송
+- Gemini 키는 서버 환경 변수로만 관리, AI 기능(브리핑+추천) 사용자별 하루 60회 제한, 같은 입력은 캐시, 무료 등급 데이터 정책 안내 후 전송
+- AI 호출은 `backend/briefing.py` 한 곳에 모여 있어 부대 내부(설치형) 모델로 교체하기 쉬움
 - 체험 계정 IP당 시간당 20회·전체 300회, 가입 IP당 시간당 10회 제한
 - 사용자 입력은 모두 이스케이프 후 렌더링, 링크는 http(s)만 허용
 
@@ -106,7 +109,7 @@ python -m venv .venv
 http://localhost:8000 — DB는 `./resume.db`(SQLite)에 자동 생성됩니다.
 환경 변수는 `.env.example`을 `.env`로 복사해 채웁니다 (예: `GEMINI_API_KEY=...`). `.env`는 git·배포에서 제외되며, 이미 설정된 환경 변수가 우선합니다.
 
-테스트 (파서·API·잠금 경쟁 조건·체험 모드 등 11개):
+테스트 (파서·API·잠금 경쟁 조건·체험 모드·AI 추천 등 12개):
 
 ```bash
 .venv/Scripts/python tests/test_api.py
@@ -129,4 +132,4 @@ http://localhost:8000 — DB는 `./resume.db`(SQLite)에 자동 생성됩니다.
 
 ## 다음 단계
 
-메일·회의록 텍스트를 Gemini로 해석해 작업에 연결 · 팀원 기록 점검(읽기 전용) · 퇴근 시각 "다음엔" 알림 · 작업 완료 보고 자동 생성
+AI 코딩 도구(Claude Code hook 등) 작업 종료 시 자동 기록 · 부대 내부 설치형 AI 모델 연결 · 메일·회의록 텍스트를 AI로 해석해 작업에 연결 · 팀원 기록 점검(읽기 전용) · 퇴근 시각 "다음엔" 알림 · 작업 완료 보고 자동 생성

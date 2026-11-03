@@ -767,6 +767,7 @@
           <label class="label" for="f-next">다음엔<span class="req">*</span></label>
           <input class="input next-input" id="f-next" maxlength="2000" placeholder="다음에 할 일 한 줄 — Enter로 저장" value="${esc(init.next)}">
           <div id="next-error" class="hint hidden" style="color:var(--danger)">다음엔을 한 줄 적거나 [그냥 저장]을 누르세요.</div>
+          <div class="suggest hidden" id="suggest" aria-live="polite"></div>
         </div>
         <div class="field">
           <label class="label" for="f-what">무엇을</label>
@@ -775,6 +776,7 @@
         <div class="field">
           <label class="label" for="f-where">어디까지 <span class="hint" style="display:inline">파일·함수·줄 등</span></label>
           <textarea class="textarea" id="f-where" rows="2" maxlength="2000" placeholder="예: RefundService.py calc_refund() — 부분 환불 분기 작성 완료">${esc(init.where)}</textarea>
+          <div class="suggest-where hidden" id="suggest-where"></div>
         </div>
         <details class="more" ${moreOpen ? "open" : ""}>
           <summary><span>메모 · 관련 링크 · git/svn status 붙여넣기${carried ? ` <span class="chip" style="margin-left:4px">이전 ${carried} 유지</span>` : ""}</span></summary>
@@ -866,7 +868,14 @@
     const timer = setInterval(autosave, AUTOSAVE_MS);
     document.addEventListener("visibilitychange", onVis);
     window.addEventListener("pagehide", onHide);
-    const onKey = (e) => { if (e.key === "Escape" && !document.querySelector(".modal-bg")) go("#/"); };
+    const onKey = (e) => {
+      if (e.key === "Escape" && !document.querySelector(".modal-bg")) go("#/");
+      // Alt+1~3: 추천 후보 고르기
+      if (e.altKey && /^[1-3]$/.test(e.key) && suggestion?.next[Number(e.key) - 1]) {
+        e.preventDefault();
+        pickSuggestion(Number(e.key) - 1);
+      }
+    };
     document.addEventListener("keydown", onKey);
     pageCleanup = () => {
       clearInterval(timer);
@@ -875,6 +884,69 @@
       document.removeEventListener("keydown", onKey);
       return flush(true);
     };
+
+    // 추천: 지금 입력한 내용 + 최근 기록으로 '다음엔'·'어디까지' 후보를 받아 고르기만 하게 한다
+    let suggestion = null;
+    let suggestSeq = 0;
+    const SUGGEST_LABEL = { ai: "AI 추천", demo: "AI 추천 · 체험 예시", rule: "추천" };
+    async function loadSuggest() {
+      const box = $("#suggest");
+      const seq = ++suggestSeq;
+      box.classList.remove("hidden");
+      box.innerHTML = `<div class="sg-head"><span class="sg-label"><span class="spark">✦</span> 추천을 만드는 중…</span></div>`;
+      const { what, where, memo, vcs_raw } = collect();
+      try {
+        const s = await api("POST", `/api/tasks/${taskId}/suggest`, { what, where, memo, vcs_raw });
+        if (seq !== suggestSeq || !box.isConnected) return;
+        renderSuggest(s);
+      } catch (e) {
+        if (seq === suggestSeq && box.isConnected) box.classList.add("hidden");
+      }
+    }
+    function renderSuggest(s) {
+      suggestion = s;
+      const box = $("#suggest");
+      if (!s.next.length) { box.classList.add("hidden"); } else {
+        box.innerHTML = `<div class="sg-head">
+            <span class="sg-label"><span class="spark">✦</span> ${SUGGEST_LABEL[s.source] || "추천"}</span>
+            <span class="sg-tip hide-sm">눌러서 채우기 · <kbd>Alt</kbd>+<kbd>1</kbd>~<kbd>${s.next.length}</kbd></span>
+            <button type="button" class="sg-refresh" id="sg-refresh" title="지금 입력한 내용으로 다시 추천">↻ 다시</button>
+          </div>
+          <div class="sg-list">${s.next.map((n, i) => `<button type="button" class="sg-chip" data-i="${i}"><b>${i + 1}</b>${esc(n)}</button>`).join("")}</div>
+          ${s.note ? `<div class="hint">${esc(s.note)}</div>` : ""}`;
+        box.querySelectorAll(".sg-chip").forEach((b) => b.addEventListener("click", () => pickSuggestion(Number(b.dataset.i))));
+        $("#sg-refresh").addEventListener("click", loadSuggest);
+      }
+      const sw = $("#suggest-where");
+      if (s.where && s.where !== f.where.value.trim()) {
+        sw.innerHTML = `<span class="spark">✦</span><span class="sw-text">${esc(s.where)}</span><button type="button" class="btn sm" id="sw-apply">적용</button>`;
+        sw.classList.remove("hidden");
+        $("#sw-apply").addEventListener("click", () => {
+          f.where.value = s.where;
+          f.where.dispatchEvent(new Event("input", { bubbles: true }));
+          sw.classList.add("hidden");
+        });
+      } else {
+        sw.classList.add("hidden");
+      }
+    }
+    function pickSuggestion(i) {
+      f.next.value = suggestion.next[i];
+      f.next.dispatchEvent(new Event("input", { bubbles: true }));
+      f.next.focus();
+      f.next.setSelectionRange(f.next.value.length, f.next.value.length);
+      $("#suggest").querySelectorAll(".sg-chip").forEach((b) => b.classList.toggle("on", Number(b.dataset.i) === i));
+    }
+    loadSuggest();
+    // VCS 상태를 붙여넣으면 바뀐 파일 기준으로 다시 추천
+    let suggestTimer = 0;
+    let lastVcs = f.vcs.value.trim();
+    f.vcs.addEventListener("input", () => {
+      clearTimeout(suggestTimer);
+      suggestTimer = setTimeout(() => {
+        if (f.vcs.value.trim() !== lastVcs) { lastVcs = f.vcs.value.trim(); loadSuggest(); }
+      }, 1200);
+    });
 
     // 입력이 생기면 상태 문구 갱신
     $("#stop-form").addEventListener("input", () => {
