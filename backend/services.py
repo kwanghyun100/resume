@@ -1,12 +1,13 @@
 """기록·카드 조립 로직 (라우트와 체험 데이터 생성에서 함께 사용)."""
 import hashlib
 import json
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from .db import Project, Record, Task
+from .config import KST
+from .db import Project, Record, Task, utcnow
 
 
 def iso(dt: datetime | None) -> str | None:
@@ -102,3 +103,83 @@ def build_card(db: Session, project: Project, task: Task) -> dict:
     if draft:
         card["draft_at"] = iso(draft.created_at)
     return card
+
+
+# ---------------------------------------------------------------- 주간 통계 · 스탠드업
+
+def _kst_date(dt: datetime):
+    return dt.replace(tzinfo=timezone.utc).astimezone(KST).date()
+
+
+def _user_records_since(db: Session, user_id: int, since: datetime, type_: str | None = None):
+    q = (
+        select(Record, Task, Project)
+        .join(Task, Record.task_id == Task.id)
+        .join(Project, Task.project_id == Project.id)
+        .where(Project.user_id == user_id, Record.created_at >= since)
+        .order_by(Record.created_at.desc(), Record.id.desc())
+    )
+    if type_:
+        q = q.where(Record.type == type_)
+    return db.execute(q).all()
+
+
+def week_stats(db: Session, user_id: int) -> dict:
+    """최근 7일 멈춤 기록 수, 완료한 작업 수, 연속 기록 일수."""
+    now = utcnow()
+    rows = _user_records_since(db, user_id, now - timedelta(days=60))
+    week_ago = now - timedelta(days=7)
+    manual_week = sum(1 for r, _, _ in rows if r.type == "manual" and r.created_at >= week_ago)
+    auto_week = sum(1 for r, _, _ in rows if r.type == "auto" and r.created_at >= week_ago)
+    done_week = db.scalar(
+        select(func.count(Task.id)).join(Project, Task.project_id == Project.id)
+        .where(Project.user_id == user_id, Task.status == "done", Task.updated_at >= week_ago)
+    ) or 0
+    days = {_kst_date(r.created_at) for r, _, _ in rows if r.type == "manual"}
+    today = datetime.now(KST).date()
+    day = today if today in days else today - timedelta(days=1)
+    streak = 0
+    while day in days:
+        streak += 1
+        day -= timedelta(days=1)
+    return {"manual": manual_week, "auto": auto_week, "done": done_week, "streak": streak}
+
+
+_DOW = "월화수목금토일"
+
+
+def _fmt_day(d) -> str:
+    return f"{d.month}/{d.day}({_DOW[d.weekday()]})"
+
+
+def standup(db: Session, user_id: int) -> dict:
+    """마지막으로 기록한 날의 한 일 + 오늘 이어갈 일을 마크다운으로 만든다 (AI 없이)."""
+    today = datetime.now(KST).date()
+    rows = _user_records_since(db, user_id, utcnow() - timedelta(days=14), "manual")
+    prev_days = sorted({_kst_date(r.created_at) for r, _, _ in rows if _kst_date(r.created_at) < today}, reverse=True)
+    prev_day = prev_days[0] if prev_days else None
+
+    done_lines, seen = [], set()
+    if prev_day:
+        for r, t, p in rows:  # 최신순: 작업마다 그날의 마지막 기록만
+            if _kst_date(r.created_at) != prev_day or t.id in seen:
+                continue
+            seen.add(t.id)
+            where = r.where_text or r.what or "기록"
+            done_lines.append(f"- [{p.name}] {task_label(t)}: {where}" + (" ✅ 완료" if t.status == "done" else ""))
+
+    todo_lines = []
+    projects = db.scalars(select(Project).where(Project.user_id == user_id).order_by(Project.created_at, Project.id))
+    for p in projects:
+        t = db.get(Task, p.active_task_id) if p.active_task_id else None
+        if not t or t.status != "active":
+            continue
+        card = build_card(db, p, t)
+        todo_lines.append(f"- [{p.name}] {task_label(t)}: {card['next'] or '(다음엔 미기록 — 이어하기 카드에서 적어주세요)'}")
+
+    parts = [f"### 스탠드업 · {_fmt_day(today)}", ""]
+    parts.append(f"**지난 작업 일 ({_fmt_day(prev_day)})**" if prev_day else "**지난 작업 일**")
+    parts += done_lines or ["- (최근 2주 멈춤 기록 없음)"]
+    parts += ["", "**오늘 할 일**"]
+    parts += todo_lines or ["- (진행 중인 작업 없음)"]
+    return {"text": "\n".join(parts), "prev_day": prev_day.isoformat() if prev_day else None}

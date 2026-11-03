@@ -16,7 +16,9 @@ from . import briefing as briefing_mod
 from . import config, seed, vcs
 from .db import Briefing, BriefingCall, Project, Record, SessionLocal, Task, User, init_db, utcnow
 from .security import hash_ip, hash_pin, make_session_token, read_session_token, verify_pin
-from .services import build_card, content_hash, iso, recent_records, record_dict, task_dict, task_label
+from .services import (
+    build_card, content_hash, iso, recent_records, record_dict, standup, task_dict, task_label, week_stats,
+)
 
 app = FastAPI(title="이어하기", docs_url=None, redoc_url=None, openapi_url=None)
 
@@ -287,7 +289,13 @@ def home(project_id: int | None = None, user: User = Depends(current_user), db: 
         "project": _project_dict(project) if project else None,
         "tasks": tasks,
         "card": card,
+        "stats": week_stats(db, user.id),
     }
+
+
+@app.get("/api/standup")
+def get_standup(user: User = Depends(current_user), db: Session = Depends(get_db)):
+    return standup(db, user.id)
 
 
 # ---------------------------------------------------------------- 프로젝트·작업

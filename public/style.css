@@ -225,6 +225,16 @@ main { padding: 26px 0 72px; }
 .empty .big { font-size: 17px; font-weight: 700; letter-spacing: -.02em; margin-bottom: 6px; }
 .empty p { color: var(--muted); margin: 0 0 18px; }
 
+/* ---------- stats ---------- */
+.stats { display: grid; grid-template-columns: repeat(4, 1fr); margin-top: 12px; border: 1px solid var(--line-strong); border-radius: var(--radius); background: var(--surface); box-shadow: var(--highlight); overflow: hidden; }
+.stat { padding: 13px 16px; border-left: 1px solid var(--line); min-width: 0; }
+.stat:first-child { border-left: 0; }
+.stat .num { display: block; font-size: 20px; font-weight: 700; letter-spacing: -.03em; font-variant-numeric: tabular-nums; color: var(--text); line-height: 1.2; }
+.stat .num small { font-size: 12px; font-weight: 600; color: var(--muted); margin-left: 2px; letter-spacing: 0; }
+.stat .lbl { display: block; font-size: 11.5px; color: var(--faint); margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.stat:first-child .num { color: var(--accent); }
+.head-actions { display: flex; gap: 2px; }
+
 /* ---------- sections ---------- */
 .section { margin-top: 36px; }
 .section-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; gap: 8px; }
@@ -400,4 +410,7 @@ details.raw pre { background: var(--surface-2); border: 1px solid var(--line); b
   .login-card .fields { grid-template-columns: 1fr 100px; }
   .card-actions .btn { flex: 1 1 auto; }
   .demo-btn { width: 100%; }
+  .stats { grid-template-columns: repeat(2, 1fr); }
+  .stat:nth-child(3) { border-left: 0; }
+  .stat:nth-child(n+3) { border-top: 1px solid var(--line); }
 }

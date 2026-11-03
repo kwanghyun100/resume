@@ -170,6 +170,11 @@ def test_demo():
     pc = c.get(f"/api/home?project_id={portal['id']}").json()["card"]
     assert pc["next"] == "" and pc["what"]
 
+    st = c.get("/api/home").json()["stats"]
+    assert st["manual"] >= 3 and st["streak"] >= 1
+    text = c.get("/api/standup").json()["text"]
+    assert "환불 로직 수정" in text and "예외 처리 추가 후 단위 테스트 작성" in text and "오늘 할 일" in text
+
     assert c.post("/api/demo/reset").json()["ok"]
     assert c.get("/api/home").json()["card"]["task"]["label"] == "유지보수 #7 — 환불 로직 수정"
 

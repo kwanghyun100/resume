@@ -105,6 +105,17 @@
     }
   }
 
+  // 클립보드 권한이 막힌 환경(사내 보안 정책 등): 텍스트를 선택해 두고 Ctrl+C를 안내
+  function selectForCopy(el) {
+    if (!el) return;
+    const range = document.createRange();
+    range.selectNodeContents(el);
+    const sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    toast(`클립보드 권한이 막혀 있어 텍스트를 선택해 두었습니다 · ${IS_MAC ? "⌘" : "Ctrl"}+C로 복사하세요`, true);
+  }
+
   // ------------------------------------------------------------ modal
 
   function modal({ title, body, foot }) {
@@ -354,6 +365,18 @@
     $("#login-form").addEventListener("submit", (e) => { e.preventDefault(); submit(false); });
   }
 
+  // 갤러리·공유용 바로가기: /#/demo 로 들어오면 체험 계정을 바로 만든다 (로그인된 실제 계정은 건드리지 않음)
+  async function startDemoFromLink() {
+    $app.innerHTML = `<div class="boot">샘플 데이터를 준비하는 중…</div>`;
+    const me = await fetch("/api/me", { credentials: "same-origin" }).catch(() => null);
+    if (!me || !me.ok) {
+      try { await api("POST", "/api/demo"); } catch (e) { toast(e.message, true); location.replace("#/login"); return; }
+    }
+    state.home = null;
+    state.projectId = null;
+    location.replace("#/");
+  }
+
   // ------------------------------------------------------------ S1 시작 화면
 
   async function loadHome() {
@@ -435,7 +458,7 @@
       ${t.status === "active" ? `<span class="chip accent">진행 중</span>` : `<button class="btn sm" data-start="${t.id}">▶ 시작</button>`}
     </div>`;
     return `<section class="section">
-      <div class="section-head"><h2>${esc(data.project.name)}의 작업</h2><a class="btn ghost sm" href="#/history">전체 기록 보기</a></div>
+      <div class="section-head"><h2>${esc(data.project.name)}의 작업</h2><div class="head-actions"><button class="btn ghost sm" id="btn-standup">스탠드업 복사</button><a class="btn ghost sm" href="#/history">전체 기록</a></div></div>
       <div class="list">
         ${active.map(item).join("") || `<div class="item"><div class="grow s" style="color:var(--muted)">진행 중이거나 대기 중인 작업이 없습니다</div></div>`}
         ${done.length ? (state.showDone ? done.map(item).join("") + `<button class="more-toggle" id="toggle-done">완료 숨기기</button>` : `<button class="more-toggle" id="toggle-done">완료된 작업 ${done.length}개 보기</button>`) : ""}
@@ -460,6 +483,7 @@
     $app.innerHTML = `${topbar(data, "home")}<main><div class="wrap">
       ${showBriefing ? `<div class="briefing-row"><button class="btn sm" id="btn-brief">✦ 지금 상황 3줄 요약</button></div><div id="brief-box"></div>` : ""}
       ${cardHTML(data)}
+      ${statsHTML(data)}
       ${tasksHTML(data)}
     </div></main>`;
     bindTopbar(renderHome);
@@ -468,6 +492,7 @@
     $("#btn-stop")?.addEventListener("click", () => go("#/stop"));
     $("#btn-prompt")?.addEventListener("click", () => showPrompt(c));
     $("#btn-brief")?.addEventListener("click", () => runBriefing(c, data));
+    $("#btn-standup")?.addEventListener("click", showStandup);
     $("#focus-add-task")?.addEventListener("click", () => $("#new-title")?.focus());
 
     $("#first-project")?.addEventListener("submit", async (e) => {
@@ -491,7 +516,7 @@
         await api("POST", `/api/tasks/${c.task.id}/records`, {
           type: "manual", what: c.what, where: c.where, next, memo: c.memo, links: c.links, vcs_raw: c.vcs_raw,
         });
-        toast("다음엔을 저장했습니다");
+        toast("다음엔을 저장했습니다" + markComeback());
         renderHome();
       } catch (err) { toast(err.message, true); }
     });
@@ -519,7 +544,8 @@
       } catch (err) { toast(err.message, true); }
     });
 
-    if (data.user.is_demo && c && !lsGet("guideDone")) startGuide();
+    // 자동화 브라우저(스크린샷·미리보기 생성)에는 안내 말풍선을 띄우지 않는다
+    if (data.user.is_demo && c && !lsGet("guideDone") && !navigator.webdriver && !/HeadlessChrome/.test(navigator.userAgent)) startGuide();
   }
 
   function showPrompt(card) {
@@ -527,20 +553,113 @@
     const m = modal({
       title: "AI 프롬프트",
       body: `<p class="hint" style="margin:0 0 10px">opencode·ChatGPT·Claude 등 어떤 AI 도구에 붙여넣어도 됩니다.</p><pre id="prompt-text">${esc(text)}</pre>`,
-      foot: `<button class="btn" data-close>닫기</button><button class="btn primary" id="copy-prompt">클립보드에 복사</button>`,
+      foot: `<button class="btn ghost" id="dl-context" title="프로젝트 폴더의 .resume/CONTEXT.md 로 두면 AI 코딩 도구가 시작할 때 읽습니다">CONTEXT.md 내려받기</button><span style="flex:1"></span><button class="btn" data-close>닫기</button><button class="btn primary" id="copy-prompt">클립보드에 복사</button>`,
     });
     const btn = $("#copy-prompt", m.el);
     btn.focus();
     btn.addEventListener("click", async () => {
-      if (await copyText(text)) { toast("프롬프트를 복사했습니다"); m.close(); }
-      else toast("복사하지 못했습니다. 텍스트를 직접 선택해 복사하세요", true);
+      if (await copyText(text)) { toast("프롬프트를 복사했습니다" + markComeback()); m.close(); }
+      else selectForCopy($("pre", m.el));
     });
+    $("#dl-context", m.el).addEventListener("click", () => { downloadContext(card); m.close(); });
   }
 
   async function quickCopyPrompt(card) {
     if (!card || !card.has_record) return;
-    if (await copyText(buildPrompt(card))) toast("AI 프롬프트를 복사했습니다");
+    if (await copyText(buildPrompt(card))) toast("AI 프롬프트를 복사했습니다" + markComeback());
     else showPrompt(card);
+  }
+
+  // .resume/CONTEXT.md — AI 코딩 도구(opencode 등)가 프로젝트 폴더에서 바로 읽을 수 있는 맥락 파일
+  function buildContextMd(card) {
+    const sec = (title, body) => (body && String(body).trim() ? `## ${title}\n\n${String(body).trim()}\n` : "");
+    const files = (card.vcs_files || []).map((f) => `- \`${f.status}\` ${f.path}`).join("\n");
+    return [
+      `# 이어하기 컨텍스트 — ${card.task.label}`,
+      "",
+      `> 프로젝트: ${card.project.name} · 마지막 기록: ${fmtTime(card.last_at)} · 생성: 이어하기 (${location.origin})`,
+      "",
+      sec("작업 내용", card.what),
+      sec("멈춘 위치", card.where),
+      sec("다음 할 일", card.next || "(기록 없음)"),
+      sec("수정 중인 파일", files),
+      sec("브랜치", card.vcs_branch && `\`${card.vcs_branch}\``),
+      sec("참고 메모", card.memo),
+      sec("관련 링크", (card.links || []).map((l) => `- ${l}`).join("\n")),
+      "---",
+      "",
+      "AI 도구에게: 위 파일들을 먼저 확인해 현재 상태를 파악하고, \"다음 할 일\"부터 진행하세요.",
+      "",
+    ].filter((x, i, a) => x !== "" || a[i - 1] !== "").join("\n");
+  }
+
+  function downloadContext(card) {
+    const blob = new Blob([buildContextMd(card)], { type: "text/markdown;charset=utf-8" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "CONTEXT.md";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    toast("CONTEXT.md를 내려받았습니다 · 프로젝트의 .resume/ 폴더에 두세요" + markComeback());
+  }
+
+  // 복귀 시간 측정: 화면을 연 순간(또는 3분 넘게 자리를 비웠다 돌아온 순간)부터
+  // 프롬프트 복사·CONTEXT.md·다음엔 저장 같은 첫 행동까지 걸린 시간
+  const comeback = { t0: performance.now(), done: false, hiddenAt: 0 };
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") comeback.hiddenAt = performance.now();
+    else if (comeback.hiddenAt && performance.now() - comeback.hiddenAt > 3 * 60 * 1000) {
+      comeback.t0 = performance.now();
+      comeback.done = false;
+    }
+  });
+  function comebackTimes() {
+    try { return JSON.parse(lsGet("comebackTimes") || "[]").filter((n) => typeof n === "number"); } catch (e) { return []; }
+  }
+  function comebackHTML() {
+    const xs = comebackTimes();
+    if (!xs.length) return "—";
+    return `${Math.round(xs.reduce((a, b) => a + b, 0) / xs.length)}<small>초</small>`;
+  }
+  function markComeback() {
+    if (comeback.done) return "";
+    comeback.done = true;
+    const sec = Math.round((performance.now() - comeback.t0) / 1000);
+    if (sec < 1 || sec > 30 * 60) return "";
+    lsSet("comebackTimes", JSON.stringify([...comebackTimes(), sec].slice(-20)));
+    const stat = $("#stat-comeback");
+    if (stat) stat.innerHTML = comebackHTML();
+    return ` · 복귀까지 ${sec}초${sec <= 60 ? " ⚡" : ""}`;
+  }
+
+  function statsHTML(data) {
+    if (!data.project || !data.stats) return "";
+    const st = data.stats;
+    const cell = (num, label, title, id = "") => `<div class="stat" title="${esc(title)}"><span class="num"${id ? ` id="${id}"` : ""}>${num}</span><span class="lbl">${label}</span></div>`;
+    return `<section class="stats" aria-label="이번 주 통계">
+      ${cell(comebackHTML(), "평균 복귀 시간", "화면을 열고 프롬프트 복사 등 첫 행동까지 걸린 시간 (이 기기 기준, 목표 60초)", "stat-comeback")}
+      ${cell(st.manual, "이번 주 멈춤 기록", "최근 7일 수동 멈춤 기록 수")}
+      ${cell(st.auto, "자동 저장된 초안", "버튼을 누르지 않았지만 자동 저장으로 지킨 맥락 (최근 7일)")}
+      ${cell(`${st.streak}<small>일</small>`, "연속 기록", "멈춤 기록을 남긴 날이 이어진 일수")}
+    </section>`;
+  }
+
+  async function showStandup() {
+    let r;
+    try { r = await api("GET", "/api/standup"); } catch (e) { toast(e.message, true); return; }
+    const m = modal({
+      title: "오늘의 스탠드업",
+      body: `<p class="hint" style="margin:0 0 10px">멈춤 기록으로 만든 "지난 작업 / 오늘 할 일"입니다. 데일리 스크럼·메신저에 붙여넣으세요.</p><pre>${esc(r.text)}</pre>`,
+      foot: `<button class="btn" data-close>닫기</button><button class="btn primary" id="copy-standup">클립보드에 복사</button>`,
+    });
+    const btn = $("#copy-standup", m.el);
+    btn.focus();
+    btn.addEventListener("click", async () => {
+      if (await copyText(r.text)) { toast("스탠드업을 복사했습니다"); m.close(); }
+      else selectForCopy($("pre", m.el));
+    });
   }
 
   async function runBriefing(card, data) {
@@ -936,10 +1055,14 @@
     const cmds = [];
     if (card) {
       cmds.push({ group: "작업", ic: "■", label: "멈춤 기록", kbd: "S", run: () => go("#/stop") });
-      if (card.has_record) cmds.push({ group: "작업", ic: "⧉", label: "AI 프롬프트 복사", kbd: "C", run: () => quickCopyPrompt(card) });
+      if (card.has_record) {
+        cmds.push({ group: "작업", ic: "⧉", label: "AI 프롬프트 복사", kbd: "C", run: () => quickCopyPrompt(card) });
+        cmds.push({ group: "작업", ic: "↓", label: ".resume/CONTEXT.md 내려받기", run: () => downloadContext(card) });
+      }
     }
     cmds.push({ group: "이동", ic: "↩", label: "이어하기 카드", run: () => go("#/") });
     cmds.push({ group: "이동", ic: "☰", label: "작업 히스토리", run: () => go("#/history") });
+    cmds.push({ group: "이동", ic: "✎", label: "오늘의 스탠드업 복사", run: showStandup });
     data.tasks.filter((t) => t.status === "waiting").forEach((t) => cmds.push({
       group: "작업 시작", ic: "▶", label: t.label,
       run: async () => {
@@ -1018,6 +1141,7 @@
     const route = location.hash || "#/";
     window.scrollTo(0, 0);
     if (route === "#/login") return renderLogin();
+    if (route === "#/demo") return startDemoFromLink();
     if (route === "#/stop") return renderStop();
     if (route === "#/history") return renderHistory();
     return renderHome();

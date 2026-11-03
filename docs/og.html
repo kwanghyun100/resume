@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="ko" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
+<link rel="stylesheet" href="../public/style.css">
+<style>
+  /* 갤러리 미리보기 이미지 (1200x630) — 스크린샷 생성용, 배포되지 않음 */
+  html, body { width: 1200px; height: 630px; overflow: hidden; }
+  main > .wrap > * { animation: none; }
+  .og { position: relative; width: 1200px; height: 630px; display: grid; grid-template-columns: 1fr 520px; gap: 48px; align-items: center; padding: 0 72px; }
+  .og::before { content: ""; position: absolute; inset: 0; background-image: linear-gradient(var(--line) 1px, transparent 1px), linear-gradient(90deg, var(--line) 1px, transparent 1px); background-size: 48px 48px; mask-image: radial-gradient(70% 70% at 40% 40%, #000 30%, transparent 80%); -webkit-mask-image: radial-gradient(70% 70% at 40% 40%, #000 30%, transparent 80%); }
+  .og::after { content: ""; position: absolute; inset: 0; background: radial-gradient(50% 60% at 75% 30%, rgba(139,140,255,.18), transparent 70%); }
+  .og > * { position: relative; z-index: 1; }
+  .brandline { display: flex; align-items: center; gap: 12px; font-size: 22px; font-weight: 700; letter-spacing: -.02em; margin-bottom: 28px; }
+  .brandline img { width: 40px; height: 40px; border-radius: 10px; }
+  h1 { font-size: 60px; line-height: 1.12; letter-spacing: -.045em; margin: 0 0 22px; font-weight: 750; }
+  h1 .dim { color: var(--faint); }
+  .sub { font-size: 22px; color: var(--muted); margin: 0 0 30px; line-height: 1.5; }
+  .pills { display: flex; gap: 10px; flex-wrap: wrap; }
+  .pills span { font-size: 16px; font-weight: 600; color: var(--text-2); border: 1px solid var(--line-strong); background: var(--surface); border-radius: 999px; padding: 7px 14px; }
+  .card { padding: 26px 28px 22px; }
+  .card-title { font-size: 25px; }
+  .row.next .v { font-size: 20px; }
+</style>
+</head>
+<body>
+  <div class="og">
+    <div>
+      <div class="brandline"><img src="../public/favicon.svg" alt="">이어하기</div>
+      <h1>어제 멈춘 곳에서,<br><span class="dim">1분 안에</span> 다시 시작.</h1>
+      <p class="sub">멈출 때 한 줄, 돌아올 때 카드 한 장.<br>회의·호출로 끊겨도 맥락을 잃지 않는 개발자 도구</p>
+      <div class="pills"><span>10초 멈춤 기록</span><span>git·svn 자동 해석</span><span>AI 프롬프트</span><span>Gemini 3줄 브리핑</span></div>
+    </div>
+    <article class="card hero">
+      <div class="card-head"><div><div class="eyebrow"><span class="proj">결제시스템</span><span class="sep">/</span><span>지금 이어갈 작업</span></div>
+        <h2 class="card-title">유지보수 #7 — 환불 로직 수정</h2></div><span class="chip accent">진행 중</span></div>
+      <div class="rows">
+        <div class="row"><span class="k">무엇을</span><span class="v">환불 금액 계산 오류 수정</span></div>
+        <div class="row"><span class="k">어디까지</span><span class="v">calc_refund() — 부분 환불 분기 완료</span></div>
+        <div class="row next"><span class="k">다음엔</span><span class="v">예외 처리 추가 후 단위 테스트 작성</span></div>
+        <div class="row"><span class="k">수정 중</span><span class="v"><div class="files"><span class="file"><b class="st-M">M</b>RefundService.py</span><span class="file"><b class="st-M">M</b>test_refund.py</span></div></span></div>
+        <div class="row"><span class="k">브랜치</span><span class="v branch">fix/refund-7</span></div>
+      </div>
+      <div class="card-meta"><span>마지막 기록 <b>어제 18:12</b></span><span>수동</span></div>
+    </article>
+  </div>
+</body>
+</html>
