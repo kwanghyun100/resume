@@ -687,7 +687,7 @@
     const steps = [
       ["#resume-card", "어제 멈춘 작업이 <b>카드 한 장</b>으로 바로 보입니다. 무엇을 · 어디까지 · 다음엔, 수정 중 파일과 브랜치까지."],
       ["#btn-prompt", "<b>AI 프롬프트</b>를 복사해 opencode 같은 AI 도구에 붙여넣으면 바로 이어서 작업합니다."],
-      ["#btn-stop", "회의·호출로 급히 떠날 땐 <b>[멈춤 기록]</b> → 다음엔 한 줄 → <kbd>Enter</kbd>. 10초면 끝납니다."],
+      ["#btn-stop", "회의·호출로 급히 떠날 땐 <b>[멈춤 기록]</b> → AI 추천을 누르거나 한 줄 → <kbd>Enter</kbd>. 쓸 시간도 없으면 <kbd>Enter</kbd> 두 번."],
     ];
     let i = 0;
     let bubble = null;
@@ -766,7 +766,7 @@
         <div class="field">
           <label class="label" for="f-next">다음엔<span class="req">*</span></label>
           <input class="input next-input" id="f-next" maxlength="2000" placeholder="다음에 할 일 한 줄 — Enter로 저장" value="${esc(init.next)}">
-          <div id="next-error" class="hint hidden" style="color:var(--danger)">다음엔을 한 줄 적거나 [그냥 저장]을 누르세요.</div>
+          <div id="next-error" class="hint hidden" style="color:var(--warn)">다음엔이 비어 있습니다. 한 줄 적거나, 한 번 더 누르면 그대로 저장됩니다.</div>
           <div class="suggest hidden" id="suggest" aria-live="polite"></div>
         </div>
         <div class="field">
@@ -792,10 +792,9 @@
         </details>
         <div class="stop-actions">
           <button class="btn primary lg" type="submit" id="save-btn">저장 <kbd>Enter</kbd></button>
-          <button class="btn lg" type="button" id="save-empty">그냥 저장</button>
           <button class="btn ghost lg" type="button" id="cancel-btn">취소 <kbd class="hide-sm">Esc</kbd></button>
         </div>
-        <p class="hint">"다음엔"을 쓸 시간도 없으면 <b>[그냥 저장]</b>. 버튼을 깜빡해도 입력 내용은 5분마다, 그리고 창을 닫거나 탭을 바꿀 때 자동 저장됩니다.</p>
+        <p class="hint">"다음엔"을 쓸 시간도 없으면 <b>Enter를 두 번</b> 누르세요. 버튼을 깜빡해도 입력 내용은 5분마다, 그리고 창을 닫거나 탭을 바꿀 때 자동 저장됩니다.</p>
       </form>
     </div></main>
     <div class="autosave"><div class="wrap"><span class="dot" id="as-dot"></span><span id="as-text">자동 저장 대기 중 · 변경하면 5분마다 저장</span></div></div>`;
@@ -950,7 +949,7 @@
 
     // 입력이 생기면 상태 문구 갱신
     $("#stop-form").addEventListener("input", () => {
-      $("#next-error").classList.add("hidden");
+      disarmEmpty();
       if (!/ok|busy|err/.test($("#as-dot").className)) setStatus("", "변경됨 · 5분마다, 창을 닫을 때 자동 저장");
     });
 
@@ -972,15 +971,25 @@
     f.vcs.addEventListener("input", () => { clearTimeout(vcsTimer); vcsTimer = setTimeout(preview, 350); });
     if (init.vcs_raw) preview();
 
-    const save = async (allowEmpty) => {
+    // 저장 버튼 하나: 다음엔이 비어 있으면 한 번 멈춰 세우고, 한 번 더 누르면 그대로 저장
+    const SAVE_LABEL = `저장 <kbd>Enter</kbd>`;
+    let emptyArmed = false;
+    function disarmEmpty() {
+      if (!emptyArmed) return;
+      emptyArmed = false;
+      $("#next-error").classList.add("hidden");
+      $("#save-btn").innerHTML = SAVE_LABEL;
+    }
+    const save = async () => {
       const body = collect();
-      if (!body.next && !allowEmpty) {
+      if (!body.next && !emptyArmed) {
+        emptyArmed = true;
         $("#next-error").classList.remove("hidden");
+        $("#save-btn").innerHTML = `다음엔 없이 저장 <kbd>Enter</kbd>`;
         f.next.focus();
         return;
       }
       $("#save-btn").disabled = true;
-      $("#save-empty").disabled = true;
       try {
         await api("POST", url, { ...body, type: "manual" });
         submitted = true;
@@ -990,11 +999,9 @@
       } catch (e) {
         toast(`저장하지 못했습니다: ${e.message}`, true);
         $("#save-btn").disabled = false;
-        $("#save-empty").disabled = false;
       }
     };
-    $("#stop-form").addEventListener("submit", (e) => { e.preventDefault(); save(false); });
-    $("#save-empty").addEventListener("click", () => save(true));
+    $("#stop-form").addEventListener("submit", (e) => { e.preventDefault(); save(); });
     $("#cancel-btn").addEventListener("click", () => go("#/"));
     f.next.focus();
   }
