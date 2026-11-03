@@ -185,7 +185,6 @@
       ${current === "history"
         ? `<a class="btn ghost sm" href="#/">이어하기</a>`
         : `<a class="btn ghost sm" href="#/history">히스토리</a>`}
-      <button class="btn ghost icon-btn" id="theme-btn" title="라이트/다크 전환" aria-label="라이트/다크 전환"><svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="8" cy="8" r="6"/><path d="M8 2a6 6 0 0 0 0 12z" fill="currentColor"/></svg></button>
       <button class="btn ghost sm" id="logout-btn" title="${esc(u.name)}">${u.is_demo ? "나가기" : "로그아웃"}</button>
     </div></header>`;
   }
@@ -208,13 +207,6 @@
         after();
       });
     }
-    $("#theme-btn").addEventListener("click", () => {
-      const cur = document.documentElement.dataset.theme
-        || (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
-      const next = cur === "dark" ? "light" : "dark";
-      document.documentElement.dataset.theme = next;
-      lsSet("theme", next);
-    });
     $("#logout-btn").addEventListener("click", async () => {
       await api("POST", "/api/logout").catch(() => {});
       state.home = null;
@@ -1072,7 +1064,6 @@
     data.projects.filter((p) => !data.project || p.id !== data.project.id).forEach((p) => cmds.push({
       group: "프로젝트 전환", ic: "◇", label: p.name, run: () => { state.projectId = p.id; go("#/"); },
     }));
-    cmds.push({ group: "설정", ic: "◐", label: "라이트/다크 전환", run: () => $("#theme-btn")?.click() });
 
     const bg = document.createElement("div");
     bg.className = "modal-bg cmdk-bg";

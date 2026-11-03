@@ -1,68 +1,21 @@
 /* 이어하기 — 디자인 토큰
-   방향: 다크 우선 · 모노크롬 + 절제된 인디고 포인트 · 그림자 대신 얇은 경계선 · 키보드 중심 */
+   방향: 단일 다크 테마(OS 설정과 무관하게 어디서나 같은 화면) · 모노크롬 + 절제된 인디고 포인트
+   · 그림자 대신 얇은 경계선 · 키보드 중심. 프로젝터·저가 모니터를 고려해 보조 텍스트 대비를 높게 잡음 */
 :root {
-  --bg: #fbfbfa;
-  --bg-elev: #ffffff;
-  --surface: #ffffff;
-  --surface-2: #f4f4f2;
-  --surface-3: #ececea;
-  --line: rgba(15, 15, 20, .08);
-  --line-strong: rgba(15, 15, 20, .14);
-  --text: #111113;
-  --text-2: #3c3d42;
-  --muted: #6e7079;
-  --faint: #9a9ca5;
-  --accent: #5b5bd6;
-  --accent-2: #4747c2;
-  --accent-soft: rgba(91, 91, 214, .08);
-  --accent-line: rgba(91, 91, 214, .28);
-  --on-accent: #ffffff;
-  --invert-bg: #111113;
-  --invert-text: #fbfbfa;
-  --warn: #b35a00;
-  --warn-soft: rgba(230, 140, 20, .1);
-  --warn-line: rgba(200, 120, 20, .3);
-  --ok: #1a7f4b;
-  --ok-soft: rgba(30, 150, 90, .1);
-  --danger: #d1342f;
-  --danger-soft: rgba(209, 52, 47, .08);
-  --st-m: #c27a00; --st-a: #1f9d55; --st-d: #e5484d; --st-u: #8b8d98; --st-r: #8e4ec6;
-  --highlight: inset 0 1px 0 rgba(255, 255, 255, .7);
-  --pop: 0 1px 2px rgba(0,0,0,.04), 0 12px 32px -8px rgba(15, 15, 30, .12);
-  --glow: radial-gradient(60% 50% at 50% 0%, rgba(91, 91, 214, .10), transparent 70%);
-  --radius: 14px;
-  --radius-sm: 9px;
-  --mono: "JetBrains Mono", ui-monospace, "Cascadia Code", Consolas, "D2Coding", monospace;
-  color-scheme: light;
-}
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    --bg: #0a0a0b; --bg-elev: #111113; --surface: #121214; --surface-2: #19191c; --surface-3: #222226;
-    --line: rgba(255, 255, 255, .07); --line-strong: rgba(255, 255, 255, .12);
-    --text: #ededef; --text-2: #c9cacf; --muted: #8b8d97; --faint: #5f616b;
-    --accent: #8b8cff; --accent-2: #a5a6ff; --accent-soft: rgba(139, 140, 255, .10); --accent-line: rgba(139, 140, 255, .32);
-    --on-accent: #0a0a0b; --invert-bg: #ededef; --invert-text: #0a0a0b;
-    --warn: #f5b14c; --warn-soft: rgba(245, 177, 76, .08); --warn-line: rgba(245, 177, 76, .25);
-    --ok: #4cc38a; --ok-soft: rgba(76, 195, 138, .1); --danger: #ff6369; --danger-soft: rgba(255, 99, 105, .1);
-    --st-m: #f5b14c; --st-a: #4cc38a; --st-d: #ff6369; --st-u: #7d7f89; --st-r: #b98cff;
-    --highlight: inset 0 1px 0 rgba(255, 255, 255, .05);
-    --pop: 0 0 0 1px rgba(255,255,255,.04), 0 16px 40px -12px rgba(0, 0, 0, .7);
-    --glow: radial-gradient(60% 50% at 50% 0%, rgba(139, 140, 255, .12), transparent 70%);
-    color-scheme: dark;
-  }
-}
-:root[data-theme="dark"] {
   --bg: #0a0a0b; --bg-elev: #111113; --surface: #121214; --surface-2: #19191c; --surface-3: #222226;
-  --line: rgba(255, 255, 255, .07); --line-strong: rgba(255, 255, 255, .12);
-  --text: #ededef; --text-2: #c9cacf; --muted: #8b8d97; --faint: #5f616b;
-  --accent: #8b8cff; --accent-2: #a5a6ff; --accent-soft: rgba(139, 140, 255, .10); --accent-line: rgba(139, 140, 255, .32);
+  --line: rgba(255, 255, 255, .08); --line-strong: rgba(255, 255, 255, .14);
+  --text: #ededef; --text-2: #cfd0d5; --muted: #9597a1; --faint: #6c6e78;
+  --accent: #8b8cff; --accent-2: #a5a6ff; --accent-soft: rgba(139, 140, 255, .12); --accent-line: rgba(139, 140, 255, .34);
   --on-accent: #0a0a0b; --invert-bg: #ededef; --invert-text: #0a0a0b;
   --warn: #f5b14c; --warn-soft: rgba(245, 177, 76, .08); --warn-line: rgba(245, 177, 76, .25);
   --ok: #4cc38a; --ok-soft: rgba(76, 195, 138, .1); --danger: #ff6369; --danger-soft: rgba(255, 99, 105, .1);
-  --st-m: #f5b14c; --st-a: #4cc38a; --st-d: #ff6369; --st-u: #7d7f89; --st-r: #b98cff;
+  --st-m: #f5b14c; --st-a: #4cc38a; --st-d: #ff6369; --st-u: #868892; --st-r: #b98cff;
   --highlight: inset 0 1px 0 rgba(255, 255, 255, .05);
   --pop: 0 0 0 1px rgba(255,255,255,.04), 0 16px 40px -12px rgba(0, 0, 0, .7);
   --glow: radial-gradient(60% 50% at 50% 0%, rgba(139, 140, 255, .12), transparent 70%);
+  --radius: 14px;
+  --radius-sm: 9px;
+  --mono: "JetBrains Mono", ui-monospace, "Cascadia Code", Consolas, "D2Coding", monospace;
   color-scheme: dark;
 }
 
