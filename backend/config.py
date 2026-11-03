@@ -1,5 +1,6 @@
 """환경 변수 기반 설정. 로컬은 SQLite, Vercel은 외부 PostgreSQL."""
 import hashlib
+import secrets
 import logging
 import os
 from datetime import timedelta, timezone
@@ -60,7 +61,12 @@ def _secret_key() -> str:
     if key:
         return key
     if IS_VERCEL:
-        log.warning("SECRET_KEY 미설정: DATABASE_URL에서 파생한 키 사용. 반드시 SECRET_KEY를 설정하세요.")
+        if DATABASE_URL.startswith("sqlite"):
+            # 공개된 값에서 키를 만들면 누구나 쿠키를 위조할 수 있으므로, 인스턴스마다 임의 키 사용
+            log.warning("SECRET_KEY·DB 미설정: 임의 키 사용 (인스턴스가 바뀌면 다시 로그인해야 함)")
+            return secrets.token_hex(32)
+        # DB 주소에는 비밀번호가 들어 있어 외부에서 알 수 없다
+        log.warning("SECRET_KEY 미설정: DB 주소에서 파생한 키 사용. SECRET_KEY를 설정하는 것을 권장합니다.")
         return hashlib.sha256(("resume-fallback:" + DATABASE_URL).encode()).hexdigest()
     return "dev-only-secret-key"
 
@@ -81,6 +87,9 @@ LOCK_THRESHOLD = 5
 LOCK_MINUTES = 5
 DEMO_HOURS = 24
 DEMO_PER_IP_PER_HOUR = 20
+DEMO_TOTAL_PER_HOUR = 300
+SIGNUP_PER_IP_PER_HOUR = 10
+BRIEFING_PER_USER_PER_DAY = 30
 
 # 한국은 서머타임이 없으므로 고정 오프셋 사용 (서버리스 환경의 tzdata 의존 제거)
 KST = timezone(timedelta(hours=9))

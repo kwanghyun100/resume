@@ -90,7 +90,7 @@ def build_card(db: Session, project: Project, task: Task) -> dict:
         v = (getattr(draft, attr) if draft else "") or (getattr(base, attr) if base else "")
         card[key] = v or ""
     card["links"] = (draft.links if draft and draft.links else None) or (base.links if base else []) or []
-    src_vcs = draft if draft and (draft.vcs_files or draft.vcs_branch) else base
+    src_vcs = draft if draft and draft.vcs_raw else base
     if src_vcs:
         card["vcs_branch"] = src_vcs.vcs_branch
         card["vcs_files"] = src_vcs.vcs_files or []

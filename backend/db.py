@@ -41,6 +41,8 @@ class Base(DeclarativeBase):
 
 class User(Base):
     __tablename__ = "users"
+    # SQLite가 삭제된 id를 재사용하면 옛 세션 쿠키가 새 계정으로 로그인되므로 막는다
+    __table_args__ = {"sqlite_autoincrement": True}
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     name: Mapped[str] = mapped_column(String(64), unique=True, index=True)
     pin_hash: Mapped[str] = mapped_column(String(255))
@@ -102,6 +104,14 @@ class Briefing(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 
+class BriefingCall(Base):
+    """복귀 브리핑 API 호출 기록 (사용자별 하루 한도 계산용)."""
+    __tablename__ = "briefing_calls"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
+
+
 _initialized = False
 
 
@@ -112,7 +122,13 @@ def init_db() -> None:
         if engine.dialect.name == "postgresql":
             # Supabase는 public 스키마를 REST API(anon 키)로 노출하므로 RLS를 켜서 막는다.
             # 앱은 테이블 소유자로 접속하므로 RLS의 영향을 받지 않는다.
+            # ALTER는 테이블 전체 락을 잡으므로, 아직 꺼진 테이블에만 한 번 실행한다
+            names = [t.name for t in Base.metadata.sorted_tables]
             with engine.begin() as conn:
-                for table in Base.metadata.sorted_tables:
-                    conn.execute(text(f'ALTER TABLE "{table.name}" ENABLE ROW LEVEL SECURITY'))
+                off = conn.execute(text(
+                    "SELECT relname FROM pg_class WHERE relnamespace = 'public'::regnamespace "
+                    "AND relkind = 'r' AND NOT relrowsecurity AND relname = ANY(:names)"
+                ), {"names": names}).scalars().all()
+                for name in off:
+                    conn.execute(text(f'ALTER TABLE "{name}" ENABLE ROW LEVEL SECURITY'))
         _initialized = True

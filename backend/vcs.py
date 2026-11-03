@@ -81,8 +81,8 @@ def detect(text: str) -> str:
         if not m:
             continue
         prefix_len = len(m.group(1)) + len(m.group(2))
-        if prefix_len >= 6 and _SVN_ENTRY.match(l):
-            svn += 1
+        if (prefix_len >= 6 or l[3:4] == "+") and _SVN_ENTRY.match(l):
+            svn += 1  # "A  +    path"(이력 포함 복사)도 svn
         elif prefix_len == 3 and _GIT_SHORT_ENTRY.match(l):
             git_short += 1
     if svn > git_short:

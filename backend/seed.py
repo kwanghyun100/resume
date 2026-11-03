@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from . import vcs
 from .briefing import build_source, source_hash
 from .config import KST
-from .db import Briefing, Project, Record, Task, User, utcnow
+from .db import Briefing, BriefingCall, Project, Record, Task, User, utcnow
 from .services import content_hash, record_dict, recent_records, task_label
 
 GIT_STATUS_7 = """On branch fix/refund-7
@@ -70,6 +70,7 @@ def clear_user_data(db: Session, user_id: int) -> None:
     project_ids = select(Project.id).where(Project.user_id == user_id)
     task_ids = select(Task.id).where(Task.project_id.in_(project_ids))
     db.execute(delete(Briefing).where(Briefing.task_id.in_(task_ids)))
+    db.execute(delete(BriefingCall).where(BriefingCall.user_id == user_id))
     db.execute(delete(Record).where(Record.task_id.in_(task_ids)))
     db.execute(delete(Task).where(Task.project_id.in_(project_ids)))
     db.execute(delete(Project).where(Project.user_id == user_id))

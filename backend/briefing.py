@@ -74,7 +74,7 @@ def call_gemini(source: str) -> tuple[str, str]:
         raise BriefingError("no_key")
     prompt = PROMPT.format(source=source)
     models = list(dict.fromkeys([GEMINI_MODEL, *GEMINI_FALLBACK_MODELS]))
-    deadline = time.monotonic() + 45
+    deadline = time.monotonic() + 30  # 서버리스 함수 시간 제한보다 짧게
     last = "network"
     for model in models:
         remaining = deadline - time.monotonic()
@@ -82,12 +82,12 @@ def call_gemini(source: str) -> tuple[str, str]:
             break
         try:
             try:
-                data = _request(model, prompt, thinking=True, timeout=min(25, remaining))
+                data = _request(model, prompt, thinking=True, timeout=min(15, remaining))
             except urllib.error.HTTPError as e:
                 if e.code != 400:
                     raise
                 # thinkingLevel을 모르는 모델이면 생각 설정 없이 다시 요청
-                data = _request(model, prompt, thinking=False, timeout=min(25, deadline - time.monotonic()))
+                data = _request(model, prompt, thinking=False, timeout=max(1, min(15, deadline - time.monotonic())))
         except urllib.error.HTTPError as e:
             last = f"http_{e.code}"
             if e.code in _RETRY_NEXT_MODEL:

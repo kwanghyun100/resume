@@ -11,6 +11,7 @@
   };
   let pageCleanup = null;
   const AUTOSAVE_MS = 5 * 60 * 1000;
+  const IS_MAC = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
 
   // ------------------------------------------------------------ utils
 
@@ -163,16 +164,17 @@
     const u = data.user;
     const opts = data.projects.map((p) => `<option value="${p.id}" ${data.project && p.id === data.project.id ? "selected" : ""}>${esc(p.name)}${p.vcs_type !== "unknown" ? ` (${p.vcs_type.toUpperCase()})` : ""}</option>`).join("");
     const banner = u.is_demo
-      ? `<div class="demo-banner"><div class="wrap"><span>체험 모드 · <span class="hide-sm">입력한 내용은 </span>24시간 후 자동 삭제<span class="hide-sm">됩니다</span></span><span class="spacer" style="flex:1"></span><button id="demo-reset">처음부터 다시</button></div></div>`
+      ? `<div class="demo-banner"><div class="wrap"><span class="tag">DEMO</span><span>체험 모드 · <span class="hide-sm">입력한 내용은 </span>24시간 후 자동 삭제<span class="hide-sm">됩니다</span></span><span class="spacer" style="flex:1"></span><button id="demo-reset">처음부터 다시 ↺</button></div></div>`
       : "";
     return `${banner}<header class="topbar"><div class="wrap">
       <a class="brand" href="#/"><img src="/favicon.svg" alt=""><span>이어하기</span></a>
       ${data.projects.length ? `<select class="select proj-select" id="proj-select" aria-label="프로젝트 선택">${opts}<option value="__new">+ 새 프로젝트</option></select>` : `<span class="spacer"></span>`}
       <span class="spacer"></span>
+      <button class="btn sm cmdk-btn hide-sm" id="cmdk-btn" title="명령 팔레트">명령<kbd>${IS_MAC ? "⌘" : "Ctrl"} K</kbd></button>
       ${current === "history"
-        ? `<a class="btn ghost sm" href="#/">← 이어하기</a>`
+        ? `<a class="btn ghost sm" href="#/">이어하기</a>`
         : `<a class="btn ghost sm" href="#/history">히스토리</a>`}
-      <button class="btn ghost icon-btn" id="theme-btn" title="라이트/다크 전환" aria-label="라이트/다크 전환">◐</button>
+      <button class="btn ghost icon-btn" id="theme-btn" title="라이트/다크 전환" aria-label="라이트/다크 전환"><svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="8" cy="8" r="6"/><path d="M8 2a6 6 0 0 0 0 12z" fill="currentColor"/></svg></button>
       <button class="btn ghost sm" id="logout-btn" title="${esc(u.name)}">${u.is_demo ? "나가기" : "로그아웃"}</button>
     </div></header>`;
   }
@@ -208,6 +210,7 @@
       state.projectId = null;
       go("#/login");
     });
+    $("#cmdk-btn")?.addEventListener("click", openCommandPalette);
     const reset = $("#demo-reset");
     if (reset) {
       reset.addEventListener("click", async () => {
@@ -255,27 +258,49 @@
       if (e === "in") { go("#/"); return; }
     }
     $app.innerHTML = `<div class="login"><div class="wrap">
-      <img class="hero-mark" src="/favicon.svg" alt="">
-      <h1>어제 멈춘 곳에서,<br>1분 안에 다시 시작.</h1>
-      <p class="sub">멈출 때 한 줄 남기면, 돌아올 때 이어하기 카드 한 장이 기다립니다.</p>
-      <ul class="feature-list">
-        <li><span class="n">1</span><span><b>이어하기 카드</b> — 무엇을 · 어디까지 · 다음엔, 수정 중 파일과 브랜치까지 한눈에</span></li>
-        <li><span class="n">2</span><span><b>10초 멈춤 기록</b> — 회의·호출로 급히 떠날 때 버튼 → 한 줄 → Enter</span></li>
-        <li><span class="n">3</span><span><b>AI 프롬프트 복사</b> — opencode 등에 붙여넣으면 바로 이어서 작업</span></li>
-      </ul>
-      <button class="btn primary lg demo-btn" id="demo-btn">샘플로 체험하기 →</button>
-      <p class="demo-note">로그인 없이 · 샘플 데이터로 모든 기능 사용 · 24시간 후 자동 삭제</p>
-      <div class="divider">내 계정으로 시작</div>
-      <form id="login-form" autocomplete="on">
-        <div id="login-error" class="form-error hidden"></div>
-        <div id="create-box"></div>
-        <div class="field"><label class="label" for="name">이름</label>
-          <input class="input" id="name" name="username" maxlength="30" autocomplete="username" required></div>
-        <div class="field"><label class="label" for="pin">PIN (숫자 4자리)</label>
-          <input class="input pin-input" id="pin" name="password" type="password" inputmode="numeric" pattern="\\d{4}" maxlength="4" autocomplete="current-password" required></div>
-        <button class="btn lg" style="width:100%" id="login-btn">로그인</button>
-        <p class="hint" style="text-align:center">처음이면 이 이름과 PIN으로 새 계정을 만듭니다. 5회 틀리면 5분간 잠깁니다.</p>
-      </form>
+      <section class="intro">
+        <div class="badge"><span class="pill">NEW</span>회의·호출로 끊겨도 10초면 기록</div>
+        <h1>어제 멈춘 곳에서,<br><span class="dim">1분 안에</span> 다시 시작.</h1>
+        <p class="sub">멈출 때 한 줄만 남기세요. 돌아오면 이어하기 카드 한 장이 무엇을 하다, 어디서 멈췄고, 다음에 뭘 할지 알려줍니다.</p>
+        <ul class="feature-list">
+          <li><span class="n">01</span><span><b>이어하기 카드</b> — 수정 중 파일과 브랜치까지 한눈에</span></li>
+          <li><span class="n">02</span><span><b>10초 멈춤 기록</b> — <kbd>S</kbd> → 한 줄 → <kbd>Enter</kbd>, 깜빡해도 자동 저장</span></li>
+          <li><span class="n">03</span><span><b>AI 프롬프트 복사</b> — opencode·Claude 등에 붙여넣고 바로 이어서</span></li>
+        </ul>
+        <div class="cta-row">
+          <button class="btn primary lg demo-btn" id="demo-btn">샘플로 체험하기 →</button>
+        </div>
+        <p class="demo-note">로그인 없이 · 모든 기능 사용 · 24시간 후 자동 삭제</p>
+        <form id="login-form" class="login-card" autocomplete="on">
+          <p class="title">내 계정으로 시작</p>
+          <div id="login-error" class="form-error hidden"></div>
+          <div id="create-box"></div>
+          <div class="fields">
+            <div class="field"><input class="input" id="name" name="username" maxlength="30" autocomplete="username" placeholder="이름" aria-label="이름" required></div>
+            <div class="field"><input class="input pin-input" id="pin" name="password" type="password" inputmode="numeric" pattern="\\d{4}" maxlength="4" autocomplete="current-password" placeholder="PIN" aria-label="PIN 숫자 4자리" required></div>
+          </div>
+          <button class="btn" id="login-btn">로그인</button>
+          <p class="hint">처음이면 이 이름과 4자리 PIN으로 계정을 만듭니다 · 5회 틀리면 5분 잠금</p>
+        </form>
+      </section>
+      <section class="preview" aria-hidden="true">
+        <div class="preview-stack">
+          <div class="ghost-card"></div>
+          <article class="card hero">
+            <div class="card-head"><div><div class="eyebrow"><span class="proj">결제시스템</span><span class="sep">/</span><span>지금 이어갈 작업</span></div>
+              <h2 class="card-title">유지보수 #7 — 환불 로직 수정</h2></div><span class="chip accent">진행 중</span></div>
+            <div class="rows">
+              <div class="row"><span class="k">무엇을</span><span class="v">환불 금액 계산 오류 수정</span></div>
+              <div class="row"><span class="k">어디까지</span><span class="v">calc_refund() — 부분 환불 분기 작성 완료</span></div>
+              <div class="row next"><span class="k">다음엔</span><span class="v">예외 처리 추가 후 단위 테스트 작성</span></div>
+              <div class="row"><span class="k">수정 중</span><span class="v">${filesHTML([{ status: "M", path: "RefundService.py" }, { status: "M", path: "test_refund.py" }])}</span></div>
+              <div class="row"><span class="k">브랜치</span><span class="v branch">fix/refund-7</span></div>
+            </div>
+            <div class="card-meta"><span>마지막 기록 <b>어제 18:12</b></span><span>수동</span></div>
+          </article>
+        </div>
+        <p class="preview-caption">출근하면 이 카드 한 장부터 보입니다</p>
+      </section>
     </div></div>`;
 
     const errBox = $("#login-error");
@@ -385,9 +410,9 @@
       meta.push(`마지막 기록: <b>${fmtTime(c.last_at)}</b> · ${c.last_type === "manual" ? "수동" : "자동 저장"}`);
       if (c.draft_at && c.manual_at) meta.push(`수동 기록: ${fmtTime(c.manual_at)}${c.next_from === "manual" ? " (다음엔은 이 기록 기준)" : ""}`);
     }
-    return `<article class="card" id="resume-card">
+    return `<article class="card hero" id="resume-card">
       <div class="card-head">
-        <div><div class="eyebrow">[${esc(c.project.name)}] 지금 이어갈 작업</div>
+        <div><div class="eyebrow"><span class="proj">${esc(c.project.name)}</span><span class="sep">/</span><span>지금 이어갈 작업</span></div>
         <h1 class="card-title">${esc(t.label)}</h1></div>
         ${c.draft_at ? `<span class="chip warn" title="멈춤 기록 버튼 없이 자동 저장된 초안이 있습니다">자동 초안</span>` : `<span class="chip accent">진행 중</span>`}
       </div>
@@ -407,7 +432,7 @@
     const item = (t) => `<div class="item ${t.status}">
       <div class="grow"><div class="t">${esc(t.label)}</div>
         <div class="s">${STATUS_LABEL[t.status]}${t.last_record_at ? ` · 마지막 기록 ${fmtTime(t.last_record_at)}` : " · 기록 없음"}</div></div>
-      ${t.status === "active" ? `<span class="chip accent">진행 중</span>` : `<button class="btn sm" data-start="${t.id}">▶ 이 작업 시작</button>`}
+      ${t.status === "active" ? `<span class="chip accent">진행 중</span>` : `<button class="btn sm" data-start="${t.id}">▶ 시작</button>`}
     </div>`;
     return `<section class="section">
       <div class="section-head"><h2>${esc(data.project.name)}의 작업</h2><a class="btn ghost sm" href="#/history">전체 기록 보기</a></div>
@@ -529,7 +554,7 @@
       lsSet("briefConsent", "1");
     }
     btn.disabled = true;
-    box.innerHTML = `<div class="briefing"><span class="memo-preview">요약 중…</span></div>`;
+    box.innerHTML = `<div class="briefing"><span class="loading">✦ 기록을 읽고 요약하는 중…</span></div>`;
     try {
       const r = await api("POST", `/api/tasks/${card.task.id}/briefing`);
       const lines = r.summary.split("\n").filter((l) => l.trim()).map((l) => `<div class="b-line">${esc(l)}</div>`).join("");
@@ -622,7 +647,7 @@
 
     $app.innerHTML = `${topbar(data, "stop")}<main><div class="wrap">
       <div class="stop-head">
-        <div class="eyebrow">[${esc(draft.project.name)}] 멈춤 기록</div>
+        <div class="eyebrow"><span class="proj">${esc(draft.project.name)}</span><span class="sep">/</span><span>멈춤 기록</span></div>
         <h1>${esc(draft.task.label)}</h1>
       </div>
       ${restored ? `<div class="loaded-note">자동 저장된 초안(${fmtTime(latest.created_at)})을 불러왔습니다.</div>` : ""}
@@ -684,33 +709,46 @@
     const setStatus = (cls, text) => { $("#as-dot").className = "dot " + cls; $("#as-text").textContent = text; };
     const shouldSave = () => { const s = ser(); return !submitted && s !== baseline && s !== lastSaved; };
 
+    // 진행 중인 저장 요청: 두 요청이 겹쳐 자동 초안이 두 개 생기지 않도록 이어서 보낸다
+    let inflight = Promise.resolve();
     async function autosave() {
       if (!shouldSave()) return;
       const s = ser();
+      const prev = lastSaved;
+      lastSaved = s; // 요청 중에 flush가 같은 내용을 다시 보내지 않도록 먼저 표시
       setStatus("busy", "자동 저장 중…");
+      const req = inflight.then(() => api("POST", url, { ...collect(), type: "auto" }));
+      inflight = req.catch(() => {});
       try {
-        await api("POST", url, { ...collect(), type: "auto" });
-        lastSaved = s;
+        await req;
         setStatus("ok", `자동 저장됨 · ${nowHM()}`);
       } catch (e) {
+        if (lastSaved === s) lastSaved = prev; // 다음 주기에 다시 시도
         setStatus("err", `자동 저장 실패 · ${e.message}`);
       }
     }
     // 창 닫기·탭 전환·페이지 이동: 응답을 기다릴 수 없으므로 sendBeacon(실패 시 keepalive fetch)
     // 앱 안에서 화면을 옮길 때는 다음 화면이 초안을 읽을 수 있도록 응답을 기다린다 (inApp=true)
     function flush(inApp = false) {
-      if (!shouldSave()) return Promise.resolve();
+      if (!shouldSave()) return inflight;
       const s = ser();
       const payload = JSON.stringify({ ...collect(), type: "auto" });
       lastSaved = s;
-      setStatus("ok", `자동 저장됨 · ${nowHM()}`);
       const viaFetch = () => fetch(url, {
         method: "POST", headers: { "Content-Type": "application/json" }, body: payload, keepalive: true, credentials: "same-origin",
-      }).catch(() => {});
-      if (inApp) return viaFetch();
+      });
+      if (inApp) {
+        const req = inflight.then(viaFetch).then((r) => {
+          if (!r.ok) throw new Error(String(r.status));
+        }).catch(() => toast("자동 저장하지 못했습니다. 멈춤 기록에서 다시 저장하세요", true));
+        inflight = req;
+        return req;
+      }
       let sent = false;
       try { sent = navigator.sendBeacon(url, new Blob([payload], { type: "application/json" })); } catch (e) { sent = false; }
-      return sent ? Promise.resolve() : viaFetch();
+      if (!sent) viaFetch().catch(() => {});
+      setStatus("ok", `자동 저장됨 · ${nowHM()}`);
+      return Promise.resolve();
     }
     const onVis = () => { if (document.visibilityState === "hidden") flush(); };
     const onHide = () => flush();
@@ -798,7 +836,7 @@
 
   function autoLineHTML(r) {
     const one = [r.what, r.where, r.next].filter(Boolean).join(" · ") || "(빈 초안)";
-    return `<button class="rec-auto" data-rec="${r.id}"><span class="chip">자동 저장</span><span class="one">${esc(one)}</span><span>${fmtTime(r.created_at)}</span></button>`;
+    return `<button class="rec-auto" data-rec="${r.id}"><span class="chip plain">자동 저장</span><span class="one">${esc(one)}</span><span class="time">${fmtTime(r.created_at)}</span></button>`;
   }
 
   async function renderTaskBody(task, container) {
@@ -812,7 +850,7 @@
     tools.push(`<button class="btn sm" data-act="rename">이름 수정</button>`);
     const byId = new Map(r.records.map((x) => [String(x.id), x]));
     container.innerHTML = `<div class="task-tools">${tools.join("")}</div>
-      ${r.records.length ? r.records.map((x) => (x.type === "manual" ? recordHTML(x) : autoLineHTML(x))).join("") : `<div class="memo-preview">아직 기록이 없습니다.</div>`}`;
+      ${r.records.length ? `<div class="timeline">${r.records.map((x) => (x.type === "manual" ? recordHTML(x) : autoLineHTML(x))).join("")}</div>` : `<div class="memo-preview" style="padding-bottom:10px">아직 기록이 없습니다.</div>`}`;
     $$(".rec-auto", container).forEach((b) => b.addEventListener("click", () => {
       b.outerHTML = recordHTML(byId.get(b.dataset.rec));
     }));
@@ -848,17 +886,17 @@
         <div class="grow"><div class="t">${esc(t.label)}</div>
           <div class="s">${t.last_record_at ? `마지막 기록 ${fmtTime(t.last_record_at)}` : "기록 없음"}</div></div>
         <span class="chip ${t.status === "active" ? "accent" : t.status === "done" ? "ok" : ""}">${STATUS_LABEL[t.status]}</span>
-        <span style="color:var(--faint)">${state.openTasks.has(t.id) ? "▴" : "▾"}</span>
+        <span class="chev">▾</span>
       </div>
       <div class="task-body ${state.openTasks.has(t.id) ? "" : "hidden"}" data-body="${t.id}"></div>
     </div>`;
     $app.innerHTML = `${topbar(data, "history")}<main><div class="wrap">
-      ${data.project ? `<div class="section-head"><h2 style="font-size:20px">${esc(data.project.name)} · 작업 히스토리</h2>
+      ${data.project ? `<div class="section-head"><h2 class="page-title">${esc(data.project.name)} <span style="color:var(--faint);font-weight:500">히스토리</span></h2>
         <button class="btn ghost sm" id="rename-project">프로젝트 이름 수정</button></div>
         <p class="hint" style="margin-top:-4px">작업을 누르면 기록이 최신순으로 펼쳐집니다. 수동 기록은 크게, 자동 저장은 한 줄로 접혀 있습니다.</p>
         ${groups.map(([st, label]) => {
           const ts = data.tasks.filter((t) => t.status === st);
-          return ts.length ? `<div class="group-title">${label} ${ts.length}</div>${ts.map(taskItem).join("")}` : "";
+          return ts.length ? `<div class="group-title">${label}<span class="n">${ts.length}</span></div>${ts.map(taskItem).join("")}` : "";
         }).join("") || `<div class="card empty"><div class="big">작업이 없습니다</div><p>시작 화면에서 작업을 추가하세요.</p><a class="btn primary" href="#/">시작 화면으로</a></div>`}`
         : `<div class="card empty"><div class="big">프로젝트가 없습니다</div><a class="btn primary" href="#/">시작 화면으로</a></div>`}
     </div></main>`;
@@ -876,7 +914,6 @@
       const body = $(`[data-body="${id}"]`);
       const open = body.classList.toggle("hidden") === false;
       row.setAttribute("aria-expanded", String(open));
-      row.lastElementChild.textContent = open ? "▴" : "▾";
       if (open) { state.openTasks.add(id); renderTaskBody(tasks.get(id), body); } else state.openTasks.delete(id);
     };
     $$(".task-row").forEach((row) => {
@@ -890,9 +927,79 @@
     });
   }
 
-  // ------------------------------------------------------------ 단축키 (시작 화면)
+  // ------------------------------------------------------------ 명령 팔레트 (Ctrl/⌘ K)
+
+  function openCommandPalette() {
+    if (document.querySelector(".cmdk-bg") || !state.home) return;
+    const data = state.home;
+    const card = data.card;
+    const cmds = [];
+    if (card) {
+      cmds.push({ group: "작업", ic: "■", label: "멈춤 기록", kbd: "S", run: () => go("#/stop") });
+      if (card.has_record) cmds.push({ group: "작업", ic: "⧉", label: "AI 프롬프트 복사", kbd: "C", run: () => quickCopyPrompt(card) });
+    }
+    cmds.push({ group: "이동", ic: "↩", label: "이어하기 카드", run: () => go("#/") });
+    cmds.push({ group: "이동", ic: "☰", label: "작업 히스토리", run: () => go("#/history") });
+    data.tasks.filter((t) => t.status === "waiting").forEach((t) => cmds.push({
+      group: "작업 시작", ic: "▶", label: t.label,
+      run: async () => {
+        try { await api("POST", `/api/tasks/${t.id}/start`); toast("활성 작업을 바꿨습니다"); go("#/"); } catch (e) { toast(e.message, true); }
+      },
+    }));
+    data.projects.filter((p) => !data.project || p.id !== data.project.id).forEach((p) => cmds.push({
+      group: "프로젝트 전환", ic: "◇", label: p.name, run: () => { state.projectId = p.id; go("#/"); },
+    }));
+    cmds.push({ group: "설정", ic: "◐", label: "라이트/다크 전환", run: () => $("#theme-btn")?.click() });
+
+    const bg = document.createElement("div");
+    bg.className = "modal-bg cmdk-bg";
+    bg.innerHTML = `<div class="modal cmdk" role="dialog" aria-modal="true" aria-label="명령 팔레트">
+      <input class="cmdk-input" placeholder="무엇을 할까요? 작업·프로젝트 이름으로 검색" aria-label="명령 검색">
+      <div class="cmdk-list" role="listbox"></div>
+      <div class="cmdk-foot"><span>↑↓ 이동</span><span>↵ 실행</span><span>esc 닫기</span></div>
+    </div>`;
+    document.body.appendChild(bg);
+    const input = $(".cmdk-input", bg);
+    const list = $(".cmdk-list", bg);
+    let shown = cmds;
+    let sel = 0;
+    const close = () => { bg.remove(); document.removeEventListener("keydown", onKey, true); };
+    const run = (i) => { const c = shown[i]; if (!c) return; close(); c.run(); };
+    const draw = () => {
+      const q = input.value.trim().toLowerCase();
+      shown = q ? cmds.filter((c) => (c.label + " " + c.group).toLowerCase().includes(q)) : cmds;
+      sel = Math.min(sel, Math.max(0, shown.length - 1));
+      let lastGroup = "";
+      list.innerHTML = shown.map((c, i) => {
+        const head = c.group !== lastGroup ? `<div class="cmdk-group">${esc(c.group)}</div>` : "";
+        lastGroup = c.group;
+        return `${head}<button class="cmdk-item" role="option" data-i="${i}" aria-selected="${i === sel}"><span class="ic">${c.ic}</span><span class="grow">${esc(c.label)}</span>${c.kbd ? `<kbd>${c.kbd}</kbd>` : ""}</button>`;
+      }).join("") || `<div class="cmdk-empty">일치하는 명령이 없습니다</div>`;
+      list.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: "nearest" });
+    };
+    const onKey = (e) => {
+      if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); close(); }
+      else if (e.key === "ArrowDown") { e.preventDefault(); sel = (sel + 1) % Math.max(1, shown.length); draw(); }
+      else if (e.key === "ArrowUp") { e.preventDefault(); sel = (sel - 1 + shown.length) % Math.max(1, shown.length); draw(); }
+      else if (e.key === "Enter" && !e.isComposing) { e.preventDefault(); run(sel); }
+    };
+    input.addEventListener("input", () => { sel = 0; draw(); });
+    list.addEventListener("click", (e) => { const b = e.target.closest("[data-i]"); if (b) run(Number(b.dataset.i)); });
+    bg.addEventListener("click", (e) => { if (e.target === bg) close(); });
+    document.addEventListener("keydown", onKey, true);
+    draw();
+    input.focus();
+  }
+
+  // ------------------------------------------------------------ 단축키
 
   document.addEventListener("keydown", (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.code === "KeyK" && location.hash !== "#/login") {
+      e.preventDefault();
+      if (document.querySelector(".cmdk-bg")) document.querySelector(".cmdk-bg").remove();
+      else openCommandPalette();
+      return;
+    }
     const route = location.hash || "#/";
     if (route !== "#/" || e.ctrlKey || e.metaKey || e.altKey || e.isComposing) return;
     if (e.target.closest("input, textarea, select, [contenteditable]") || document.querySelector(".modal-bg")) return;

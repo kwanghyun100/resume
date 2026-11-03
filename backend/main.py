@@ -1,5 +1,4 @@
 """이어하기 API (FastAPI). 모든 조회는 현재 사용자(user_id) 조건을 건다."""
-import os
 import re
 import secrets
 from datetime import timedelta
@@ -9,12 +8,13 @@ from typing import Iterator
 from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from . import briefing as briefing_mod
 from . import config, seed, vcs
-from .db import Briefing, Project, Record, SessionLocal, Task, User, init_db, utcnow
+from .db import Briefing, BriefingCall, Project, Record, SessionLocal, Task, User, init_db, utcnow
 from .security import hash_ip, hash_pin, make_session_token, read_session_token, verify_pin
 from .services import build_card, content_hash, iso, recent_records, record_dict, task_dict, task_label
 
@@ -59,9 +59,11 @@ def _set_session(response: Response, request: Request, user: User) -> None:
 
 def _client_ip(request: Request) -> str:
     fwd = request.headers.get("x-forwarded-for", "")
-    if fwd:
-        return fwd.split(",")[0].strip()
-    return request.headers.get("x-real-ip") or (request.client.host if request.client else "unknown")
+    ip = fwd.split(",")[0].strip() if fwd else (
+        request.headers.get("x-real-ip") or (request.client.host if request.client else "unknown"))
+    if ":" in ip:  # IPv6는 /64 단위로 묶는다 (주소를 바꿔가며 제한을 피하지 못하도록)
+        ip = ":".join(ip.split(":")[:4]) + "::/64"
+    return ip
 
 
 def _own_project(db: Session, user: User, project_id: int) -> Project:
@@ -113,8 +115,7 @@ class LoginIn(BaseModel):
 def health(db: Session = Depends(get_db)):
     # 배포 점검용: 어떤 DB에 붙었는지만 알려준다 (주소·비밀번호는 노출하지 않음)
     db.execute(select(1))
-    source = "DATABASE_URL" if os.environ.get("DATABASE_URL") else "POSTGRES_URL" if os.environ.get("POSTGRES_URL") else None
-    return {"ok": True, "db": db.get_bind().dialect.name, "db_env": source, "region": os.environ.get("VERCEL_REGION")}
+    return {"ok": True, "db": db.get_bind().dialect.name}
 
 
 @app.get("/api/me")
@@ -134,33 +135,58 @@ def login(body: LoginIn, request: Request, response: Response, db: Session = Dep
     if not user:
         if not body.create:
             return {"need_create": True}
-        user = User(name=name, pin_hash=hash_pin(body.pin))
+        ip_h = hash_ip(_client_ip(request))
+        recent = db.scalar(select(func.count(User.id)).where(
+            User.is_demo.is_(False), User.created_ip == ip_h, User.created_at > utcnow() - timedelta(hours=1),
+        ))
+        if recent >= config.SIGNUP_PER_IP_PER_HOUR:
+            raise HTTPException(429, "계정을 너무 많이 만들었습니다. 잠시 후 다시 시도하세요")
+        user = User(name=name, pin_hash=hash_pin(body.pin), created_ip=ip_h)
         db.add(user)
-        db.commit()
+        try:
+            db.commit()
+        except IntegrityError:  # 같은 이름으로 동시에 가입
+            db.rollback()
+            raise HTTPException(409, "이미 있는 이름입니다. 다시 로그인하세요")
         _set_session(response, request, user)
         return {"ok": True, "created": True}
 
     now = utcnow()
     if user.locked_until and user.locked_until > now:
-        secs = int((user.locked_until - now).total_seconds()) + 1
-        raise HTTPException(423, f"PIN을 {config.LOCK_THRESHOLD}회 틀려 잠겼습니다. {secs // 60}분 {secs % 60}초 후 다시 시도하세요")
+        raise _locked_error(user.locked_until - now)
+    if user.locked_until:  # 잠금이 끝났으면 카운터를 새로 시작
+        db.execute(update(User).where(User.id == user.id, User.locked_until <= now)
+                   .values(failed_count=0, locked_until=None))
+
+    # PIN을 확인하기 전에 시도 횟수를 원자적으로 올린다.
+    # 동시에 여러 요청이 와도 각 요청이 고유한 순번을 받으므로 5회 이후 시도는 PIN 검사 없이 막힌다.
+    attempt = db.execute(
+        update(User).where(User.id == user.id).values(failed_count=User.failed_count + 1).returning(User.failed_count)
+    ).scalar_one()
+    db.commit()
+    if attempt > config.LOCK_THRESHOLD:
+        db.execute(update(User).where(User.id == user.id, User.locked_until.is_(None))
+                   .values(locked_until=now + timedelta(minutes=config.LOCK_MINUTES)))
+        db.commit()
+        raise _locked_error(timedelta(minutes=config.LOCK_MINUTES))
 
     if not verify_pin(body.pin, user.pin_hash):
-        user.failed_count = (user.failed_count or 0) + 1
-        if user.failed_count >= config.LOCK_THRESHOLD:
-            user.failed_count = 0
-            user.locked_until = now + timedelta(minutes=config.LOCK_MINUTES)
+        if attempt >= config.LOCK_THRESHOLD:
+            db.execute(update(User).where(User.id == user.id)
+                       .values(locked_until=now + timedelta(minutes=config.LOCK_MINUTES)))
             db.commit()
             raise HTTPException(423, f"PIN을 {config.LOCK_THRESHOLD}회 틀려 {config.LOCK_MINUTES}분간 잠겼습니다")
-        left = config.LOCK_THRESHOLD - user.failed_count
-        db.commit()
-        raise HTTPException(401, f"PIN이 맞지 않습니다 (남은 시도 {left}회)")
+        raise HTTPException(401, f"PIN이 맞지 않습니다 (남은 시도 {config.LOCK_THRESHOLD - attempt}회)")
 
-    user.failed_count = 0
-    user.locked_until = None
+    db.execute(update(User).where(User.id == user.id).values(failed_count=0, locked_until=None))
     db.commit()
     _set_session(response, request, user)
     return {"ok": True}
+
+
+def _locked_error(remaining: timedelta) -> HTTPException:
+    secs = max(1, int(remaining.total_seconds()) + 1)
+    return HTTPException(423, f"PIN을 {config.LOCK_THRESHOLD}회 틀려 잠겼습니다. {secs // 60}분 {secs % 60}초 후 다시 시도하세요")
 
 
 @app.post("/api/logout")
@@ -175,14 +201,15 @@ def logout(response: Response):
 def demo_start(request: Request, response: Response, db: Session = Depends(get_db)):
     _cleanup_expired_demo(db)
     ip_h = hash_ip(_client_ip(request))
-    recent = db.scalar(
-        select(func.count(User.id)).where(
-            User.is_demo.is_(True), User.created_ip == ip_h,
-            User.created_at > utcnow() - timedelta(hours=1),
-        )
-    )
+    hour_ago = utcnow() - timedelta(hours=1)
+    recent = db.scalar(select(func.count(User.id)).where(
+        User.is_demo.is_(True), User.created_ip == ip_h, User.created_at > hour_ago,
+    ))
     if recent >= config.DEMO_PER_IP_PER_HOUR:
         raise HTTPException(429, "체험 계정을 너무 많이 만들었습니다. 잠시 후 다시 시도하세요")
+    total = db.scalar(select(func.count(User.id)).where(User.is_demo.is_(True), User.created_at > hour_ago))
+    if total >= config.DEMO_TOTAL_PER_HOUR:
+        raise HTTPException(429, "지금 체험 사용자가 많습니다. 잠시 후 다시 시도하세요")
 
     user = User(
         name=DEMO_PREFIX + secrets.token_hex(8),
@@ -436,7 +463,7 @@ def save_record(task_id: int, body: RecordIn, user: User = Depends(current_user)
 
     rec.what, rec.where_text, rec.next_text = what, where, next_
     rec.memo, rec.links, rec.vcs_raw = memo, links, vcs_raw
-    rec.vcs_branch, rec.vcs_files = parsed["branch"], parsed["files"]
+    rec.vcs_branch, rec.vcs_files = (parsed["branch"] or "")[:200] or None, parsed["files"][:500]
     rec.content_hash = h
     rec.created_at = now
 
@@ -475,19 +502,31 @@ def task_briefing(task_id: int, user: User = Depends(current_user), db: Session 
     if existing and existing.source_hash == h:
         return out(existing, True)
 
+    # 키 할당량 보호: 사용자별 하루 호출 횟수 제한
+    used = db.scalar(select(func.count(BriefingCall.id)).where(
+        BriefingCall.user_id == user.id, BriefingCall.created_at > utcnow() - timedelta(days=1)))
+    if used >= config.BRIEFING_PER_USER_PER_DAY:
+        raise HTTPException(429, f"요약은 하루 {config.BRIEFING_PER_USER_PER_DAY}회까지 쓸 수 있습니다")
+    db.add(BriefingCall(user_id=user.id))
+    db.commit()  # 외부 API를 기다리는 동안 DB 트랜잭션(락)을 잡고 있지 않도록 먼저 끝낸다
+
     try:
         summary, used_model = briefing_mod.call_gemini(src)
     except briefing_mod.BriefingError as e:
         raise HTTPException(502, f"요약을 가져오지 못했습니다 ({e})")
 
-    if existing:
-        existing.summary, existing.source_hash = summary, h
-        existing.model, existing.created_at = used_model, utcnow()
-        b = existing
-    else:
-        b = Briefing(task_id=t.id, summary=summary, source_hash=h, model=used_model)
-        db.add(b)
-    db.commit()
+    for _ in range(2):
+        b = db.scalar(select(Briefing).where(Briefing.task_id == t.id))
+        if b:
+            b.summary, b.source_hash, b.model, b.created_at = summary, h, used_model, utcnow()
+        else:
+            b = Briefing(task_id=t.id, summary=summary, source_hash=h, model=used_model)
+            db.add(b)
+        try:
+            db.commit()
+            break
+        except IntegrityError:  # 같은 작업의 요약이 동시에 저장됨 → 다시 읽어서 갱신
+            db.rollback()
     return out(b, False)
 
 

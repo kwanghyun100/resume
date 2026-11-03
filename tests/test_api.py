@@ -50,6 +50,44 @@ def test_svn():
     assert r["files"][0]["path"] == "src\\batch\\Leave.java"
 
 
+def test_svn_copied_with_history():
+    r = vcs.parse("A  +    src/copied.java\nM       src/a.java\n")
+    assert r["vcs"] == "svn" and r["files"][0] == {"status": "A", "path": "src/copied.java"}
+
+
+def test_concurrent_wrong_pins_lock():
+    from concurrent.futures import ThreadPoolExecutor
+    TestClient(app).post("/api/login", json={"name": "racer", "pin": "1111", "create": True})
+    with ThreadPoolExecutor(10) as ex:
+        codes = list(ex.map(lambda _: TestClient(app).post("/api/login", json={"name": "racer", "pin": "0000"}).status_code, range(20)))
+    assert codes.count(401) <= 4, codes  # 5번째부터는 잠김
+    assert TestClient(app).post("/api/login", json={"name": "racer", "pin": "1111"}).status_code == 423
+
+
+def test_long_branch_and_briefing_limit():
+    from backend import briefing, config
+    c = TestClient(app)
+    c.post("/api/login", json={"name": "brancher", "pin": "1212", "create": True})
+    p = c.post("/api/projects", json={"name": "p"}).json()
+    t = c.post(f"/api/projects/{p['id']}/tasks", json={"title": "t"}).json()
+    r = c.post(f"/api/tasks/{t['id']}/records", json={"type": "manual", "next": "x", "vcs_raw": "On branch " + "b" * 300})
+    assert r.status_code == 200 and len(r.json()["record"]["vcs_branch"]) == 200
+
+    # 하루 호출 한도 (Gemini 호출은 가짜로 대체)
+    old_key, old_call, old_limit = config.GEMINI_API_KEY, briefing.call_gemini, config.BRIEFING_PER_USER_PER_DAY
+    config.GEMINI_API_KEY, config.BRIEFING_PER_USER_PER_DAY = "fake", 2
+    briefing.call_gemini = lambda src: ("① a\n② b\n③ c", "fake-model")
+    try:
+        for i in range(2):
+            c.post(f"/api/tasks/{t['id']}/records", json={"type": "manual", "next": f"n{i}"})
+            assert c.post(f"/api/tasks/{t['id']}/briefing").json()["cached"] is False
+        assert c.post(f"/api/tasks/{t['id']}/briefing").json()["cached"] is True  # 기록 그대로 → 캐시, 한도 미차감
+        c.post(f"/api/tasks/{t['id']}/records", json={"type": "manual", "next": "n9"})
+        assert c.post(f"/api/tasks/{t['id']}/briefing").status_code == 429
+    finally:
+        config.GEMINI_API_KEY, briefing.call_gemini, config.BRIEFING_PER_USER_PER_DAY = old_key, old_call, old_limit
+
+
 def test_garbage():
     assert vcs.parse("hello world\nfoo")["files"] == []
 
