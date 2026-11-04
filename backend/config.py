@@ -75,9 +75,9 @@ SECRET_KEY = _secret_key()
 
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
 # gemini-2.5-flash는 2026-11 기준 신규 사용자에게 제공 종료 (404)
-GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.5-flash").strip()
+GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.6-flash").strip()
 GEMINI_FALLBACK_MODELS = [
-    m.strip() for m in os.environ.get("GEMINI_FALLBACK_MODELS", "gemini-3.8-flash,gemini-flash-latest").split(",") if m.strip()
+    m.strip() for m in os.environ.get("GEMINI_FALLBACK_MODELS", "gemini-3.8-flash,gemini-3.5-flash-lite,gemini-flash-lite-latest").split(",") if m.strip()
 ]
 CRON_SECRET = os.environ.get("CRON_SECRET", "").strip()
 

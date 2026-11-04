@@ -220,6 +220,7 @@ def test_suggest():
     # AI 응답 파싱: 코드 블록·문자열 next 허용, 깨진 JSON은 다음 모델로(None)
     assert suggest._parse('```json\n{"where": "w", "next": "한 줄"}\n```', "STOP") == {"where": "w", "next": ["한 줄"]}
     assert suggest._parse('{"where": "w", "nex', "MAX_TOKENS") is None
+    assert suggest._parse('[{"where": "w", "next": ["a"]}]', "STOP") == {"where": "w", "next": ["a"]}
 
     # 체험 모드: 미리 만든 추천, API 호출 없음
     d = TestClient(app)

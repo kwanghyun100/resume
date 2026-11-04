@@ -119,7 +119,7 @@ http://localhost:8000 — DB는 `./resume.db`(SQLite)에 자동 생성됩니다.
 
 1. Vercel에서 이 저장소를 import (FastAPI 자동 감지)
 2. Storage → Supabase 연동으로 DB 생성 (접속 주소 `POSTGRES_URL`이 자동으로 들어감)
-3. 환경 변수: `GEMINI_API_KEY`(선택), `SECRET_KEY`(권장), `GEMINI_MODEL`(기본 `gemini-3.5-flash`), `CRON_SECRET`(선택)
+3. 환경 변수: `GEMINI_API_KEY`(선택), `SECRET_KEY`(권장), `GEMINI_MODEL`(기본 `gemini-3.6-flash`, 예비: 3.8-flash → 3.5-flash-lite → flash-lite-latest), `CRON_SECRET`(선택)
 4. 환경 변수를 바꾼 뒤에는 재배포해야 반영됩니다
 
 | 경로 | 내용 |

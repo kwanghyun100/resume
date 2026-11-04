@@ -88,6 +88,8 @@ def _parse(text: str, finish: str | None):
         data = json.loads(raw)
     except ValueError:
         return None  # 잘렸거나 형식이 깨짐 → 다음 모델
+    if isinstance(data, list) and data and isinstance(data[0], dict):
+        data = data[0]  # 일부 모델은 객체를 배열로 감싸서 준다
     if not isinstance(data, dict):
         return None
     nexts = data.get("next") or []
